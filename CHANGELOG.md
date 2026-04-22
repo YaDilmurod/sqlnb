@@ -1,6 +1,33 @@
 # Change Log
 
-All notable changes to the "SQLNB Visualizer" extension will be documented in this file.
+All notable changes to the "SQL Notebook" extension will be documented in this file.
+
+## [0.0.39]
+- **Branding:** Renamed extension from "SQLNB Visualizer" to "SQL Notebook" for a cleaner marketplace presence.
+
+## [0.0.38]
+- **Fix:** Excluded `.github` directory from the VSIX package to prevent Open VSX's secret-scanner from rejecting the publish due to token references in workflow files.
+
+## [0.0.37]
+- **Chore:** Version bump to resolve duplicate version conflict on Open VSX registry. Added `RULES.md` with development guidelines.
+
+## [0.0.36]
+- **Feature:** Added a custom marketplace icon (PostgreSQL elephant + bar chart + notebook binding) and configured it in `package.json`.
+
+## [0.0.35]
+- **Infra:** Fixed GitHub Actions Node.js version to 20 for reliable CI publishing.
+
+## [0.0.34]
+- **Docs:** Updated README image formatting and dimensions for better marketplace rendering.
+
+## [0.0.33]
+- **Docs:** Resized README images to 400px width and bumped version to trigger auto-publish.
+
+## [0.0.32]
+- **Infra:** Added GitHub Action workflow for automatic publishing to Open VSX on version bumps.
+
+## [0.0.31]
+- **Docs:** Resized README images for consistent display.
 
 ## [0.0.28]
 - **Bug Fix:** Fixed an ECharts UI issue where interactive tooltips hovering near the left or right edges of the chart container would get clipped or cut off. Tooltips now intelligently confine themselves to the visible bounding box.
