@@ -2,6 +2,9 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.0.40]
+- **Bug Fix:** Server-side sorting now perfectly handles queries that end with a trailing semicolon (`;`).
+
 ## [0.0.39]
 - **Branding:** Renamed extension from "SQLNB Visualizer" to "SQL Notebook" for a cleaner marketplace presence.
 
