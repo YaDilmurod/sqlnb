@@ -4,8 +4,9 @@
 
 It provides an interactive, memory-safe environment to query databases and visualize results instantly—without ever leaving your editor.
 
-![Smart DBeaver-style Table View](images/table.jpg)
-![Interactive ECharts](images/chart.jpg)
+<img src="images/table.jpg" width="400" alt="Smart DBeaver-style Table View">
+<br>
+<img src="images/chart.jpg" width="400" alt="Interactive ECharts">
 
 ## Core Features
 
