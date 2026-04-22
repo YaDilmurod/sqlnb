@@ -1,0 +1,118 @@
+{
+    "name": "sqlnb-visualizer",
+    "displayName": "SQLNB Visualizer",
+    "description": "A lightweight Jupyter-style SQL notebook for PostgreSQL — built for data analysts",
+    "version": "0.0.33",
+    "publisher": "SQLNB",
+    "engines": {
+        "vscode": "^1.80.0"
+    },
+    "categories": [
+        "Notebooks",
+        "Data Science"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/YaDilmurod/sqlnb"
+    },
+
+    "main": "./out/extension.js",
+    "contributes": {
+        "notebookRenderer": [
+            {
+                "id": "sqlnb-table-renderer",
+                "displayName": "SQL Notebook Table Renderer",
+                "entrypoint": "./out/renderer.mjs",
+                "mimeTypes": [
+                    "application/vnd.sqlnb.table"
+                ],
+                "requiresMessaging": "optional"
+            }
+        ],
+        "languages": [
+            {
+                "id": "chart",
+                "aliases": [
+                    "Chart"
+                ]
+            }
+        ],
+        "notebooks": [
+            {
+                "type": "sql-notebook",
+                "displayName": "SQL Notebook",
+                "selector": [
+                    {
+                        "filenamePattern": "*.sqlnb"
+                    }
+                ]
+            }
+        ],
+        "commands": [
+            {
+                "command": "sqlNotebook.connect",
+                "title": "SQL Notebook: Connect to Database"
+            },
+            {
+                "command": "sqlNotebook.disconnect",
+                "title": "SQL Notebook: Disconnect"
+            },
+            {
+                "command": "sqlNotebook.showSchema",
+                "title": "SQL Notebook: Show Schema (Tables & Columns)"
+            },
+            {
+                "command": "sqlNotebook.exportCsv",
+                "title": "SQL Notebook: Export Last Result to CSV"
+            },
+            {
+                "command": "sqlNotebook.newNotebook",
+                "title": "SQL Notebook: New Notebook"
+            },
+            {
+                "command": "sqlNotebook.addChart",
+                "title": "SQL Notebook: Add Chart Cell"
+            },
+            {
+                "command": "sqlNotebook.sortData",
+                "title": "SQL Notebook: Sort Table Server-Side"
+            }
+        ],
+        "configuration": {
+            "title": "SQL Notebook",
+            "properties": {
+                "sqlNotebook.connectionString": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Currently active PostgreSQL connection string"
+                },
+                "sqlNotebook.connections": {
+                    "type": "object",
+                    "default": {},
+                    "description": "Saved PostgreSQL connections (Key = Friendly Name, Value = Connection String)"
+                },
+                "sqlNotebook.maxRows": {
+                    "type": "number",
+                    "default": 500,
+                    "description": "Maximum number of rows to display per query result"
+                }
+            }
+        }
+    },
+    "scripts": {
+        "vscode:prepublish": "npm run compile",
+        "compile": "tsc -p ./",
+        "watch": "tsc -watch -p ./",
+        "package": "mkdir -p versions && npx @vscode/vsce package -o versions/"
+    },
+    "devDependencies": {
+        "@types/vscode": "^1.80.0",
+        "@types/node": "^18.x",
+        "@types/pg": "^8.11.0",
+        "typescript": "^5.3.0"
+    },
+    "dependencies": {
+        "pg": "^8.11.3"
+    },
+    "license": "MIT"
+}

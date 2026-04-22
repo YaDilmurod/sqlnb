@@ -1,0 +1,20 @@
+{
+  "cells": [
+    {
+      "type": "markdown",
+      "content": "# My First SQL Notebook\n\n## Getting Started\n1. Press `Cmd+Shift+P` and run **SQL Notebook: Connect to Database**\n2. Paste your connection string (e.g. `postgresql://postgres:password@localhost:5432/mydb`)\n3. Click the ▶ play button on any SQL cell below to execute it\n\n---"
+    },
+    {
+      "type": "sql",
+      "content": "-- List all tables in your database\nSELECT \n  table_schema,\n  table_name\nFROM information_schema.tables \nWHERE table_schema NOT IN ('pg_catalog', 'information_schema')\nORDER BY table_schema, table_name;"
+    },
+    {
+      "type": "markdown",
+      "content": "## Tips\n- Use `Cmd+Shift+P` → **SQL Notebook: Show Schema** to inspect all columns & data types\n- Use `Cmd+Shift+P` → **SQL Notebook: Export Last Result to CSV** to save your data\n- Adjust `sqlNotebook.maxRows` in VS Code settings to control how many rows are displayed"
+    },
+    {
+      "type": "sql",
+      "content": "SELECT 1 as hello_world;"
+    }
+  ]
+}

@@ -1,0 +1,6 @@
+node_modules/
+out/
+.env
+versions/
+*.vsix
+.DS_Store
