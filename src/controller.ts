@@ -169,6 +169,9 @@ export class SqlNotebookController {
       return;
     }
 
+    // Strip trailing semicolons to prevent syntax errors when wrapping in subqueries
+    query = query.replace(/;+\s*$/, '');
+
     const cleanQuery = query.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '').trim();
 
     // Apply sort wrapper if triggered by a column header click
