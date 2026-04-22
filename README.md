@@ -1,6 +1,6 @@
-# SQLNB Visualizer
+# SQL Notebook
 
-**SQLNB Visualizer** is a lightning-fast, Jupyter-style SQL notebook extension for Visual Studio Code, built specifically for PostgreSQL data analysts. 
+**SQL Notebook** is a lightning-fast, Jupyter-style SQL notebook extension for Visual Studio Code, built specifically for PostgreSQL data analysts. 
 
 It provides an interactive, memory-safe environment to query databases and visualize results instantly—without ever leaving your editor.
 
