@@ -16,7 +16,6 @@
         "type": "git",
         "url": "https://github.com/YaDilmurod/sqlnb"
     },
-
     "main": "./out/extension.js",
     "contributes": {
         "notebookRenderer": [
@@ -107,13 +106,14 @@
         "package": "mkdir -p versions && npx @vscode/vsce package -o versions/"
     },
     "devDependencies": {
-        "@types/vscode": "^1.80.0",
         "@types/node": "^18.x",
         "@types/pg": "^8.11.0",
+        "@types/vscode": "^1.80.0",
         "typescript": "^5.3.0"
     },
     "dependencies": {
-        "pg": "^8.11.3"
+        "pg": "^8.11.3",
+        "posthog-node": "^5.29.7"
     },
     "license": "MIT"
 }
