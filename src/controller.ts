@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import { Pool } from 'pg';
 import { generateStandaloneChart, StoredResult } from './chart-engine';
+import { trackQueryRun } from './telemetry';
 
 export class SqlNotebookController {
   private readonly _id = 'sql-notebook-controller';
@@ -302,6 +303,7 @@ export class SqlNotebookController {
         ]);
       }
 
+      trackQueryRun(elapsed);
       execution.end(true, Date.now());
     } catch (err: any) {
       execution.replaceOutput([
