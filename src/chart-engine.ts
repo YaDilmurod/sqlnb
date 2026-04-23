@@ -13,7 +13,8 @@ export interface StoredResult {
 export function generateStandaloneChart(
   results: StoredResult[],
   vizId: string,
-  escapeHtml: (s: string) => string
+  escapeHtml: (s: string) => string,
+  telemetryContext?: any
 ): string {
   if (!results.length) {
     return '<div style="font-family:system-ui;color:#888;padding:16px;border:1px solid #ddd;border-radius:4px;">No query results available. Run SQL cells first, then re-run this chart cell.</div>';
@@ -86,6 +87,7 @@ export function generateStandaloneChart(
       
     </div>
     <script type="application/json" id="${vizId}-results">${resultsJson}</script>
+    <script>window._sqlnbTelemetry = ${JSON.stringify(telemetryContext || {})};</script>
     <script>${getChartEngineJS(vizId)}</script>
   `;
 }
@@ -331,6 +333,27 @@ function getChartEngineJS(vizId: string): string {
     }
 
     myChart.setOption(option, true);
+
+    if (window._sqlnbTelemetry && window._sqlnbTelemetry.enabled && window._sqlnbTelemetry.apiKey) {
+      var tel = window._sqlnbTelemetry;
+      if (window._lastTrackedChartType !== type) {
+        window._lastTrackedChartType = type;
+        fetch(tel.host + '/capture/', {
+          method: 'POST',
+          headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify({
+            api_key: tel.apiKey,
+            event: 'chart rendered and its type',
+            properties: {
+              distinct_id: tel.clientId,
+              $session_id: tel.sessionId,
+              extension_version: tel.version,
+              chart_type: type
+            }
+          })
+        }).catch(function(){});
+      }
+    }
   }
 
   function loadEChartsAndRender() {

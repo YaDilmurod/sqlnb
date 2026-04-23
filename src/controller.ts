@@ -1,7 +1,7 @@
 import * as vscode from 'vscode';
 import { Pool } from 'pg';
 import { generateStandaloneChart, StoredResult } from './chart-engine';
-import { trackQueryRun } from './telemetry';
+import { trackQueryRun, getTelemetryContext } from './telemetry';
 
 export class SqlNotebookController {
   private readonly _id = 'sql-notebook-controller';
@@ -147,7 +147,7 @@ export class SqlNotebookController {
     if (cell.document.languageId === 'chart') {
       const results = Array.from(this._resultStore.values());
       const vizId = 'sqlnb_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
-      const html = generateStandaloneChart(results, vizId, this._escapeHtml);
+      const html = generateStandaloneChart(results, vizId, this._escapeHtml, getTelemetryContext());
       execution.replaceOutput([
         new vscode.NotebookCellOutput([
           vscode.NotebookCellOutputItem.text(html, 'text/html'),
