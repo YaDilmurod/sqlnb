@@ -1,9 +1,9 @@
 {
     "name": "sqlnb-visualizer",
-    "displayName": "SQL Notebook for PostgreSQL",
+    "displayName": "SQL Notebook EDA",
     "description": "A lightweight Jupyter-style SQL notebook for PostgreSQL — built for data analysts",
     "icon": "images/icon.png",
-    "version": "0.0.45",
+    "version": "0.0.46",
     "publisher": "SQLNB",
     "engines": {
         "vscode": "^1.80.0"
