@@ -1,6 +1,16 @@
 import * as vscode from 'vscode';
 import { SqlNotebookSerializer } from './serializer';
 import { SqlNotebookController } from './controller';
+import {
+  initTelemetry,
+  trackActivation,
+  trackConnect,
+  trackDisconnect,
+  trackShowSchema,
+  trackExportCsv,
+  trackChartAdded,
+  trackNewNotebook,
+} from './telemetry';
 
 let controller: SqlNotebookController;
 let statusBarItem: vscode.StatusBarItem;
@@ -21,6 +31,9 @@ function updateStatusBar() {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  // --- Telemetry: init Yandex Metrica and fire activation event ---
+  initTelemetry(context);
+  trackActivation();
 
   // --- Phase 3: Register the Serializer ---
   context.subscriptions.push(
@@ -94,6 +107,7 @@ export function activate(context: vscode.ExtensionContext) {
       const result = await controller.connect(connStr);
       if (result.success) {
         vscode.window.showInformationMessage(`✅ Connected to database`);
+        trackConnect();
       } else {
         vscode.window.showErrorMessage(`❌ Connection failed: ${result.error}`);
       }
@@ -105,6 +119,7 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('sqlNotebook.disconnect', async () => {
       await controller.disconnect();
+      trackDisconnect();
       vscode.window.showInformationMessage('Disconnected from database');
       updateStatusBar();
     })
@@ -146,6 +161,7 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
       edit.set(editor.notebook.uri, [nbEdit]);
       await vscode.workspace.applyEdit(edit);
 
+      trackShowSchema();
       vscode.window.showInformationMessage('Schema query added — run the cell to see your tables & columns');
     })
   );
@@ -185,6 +201,7 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
 
       if (uri) {
         await vscode.workspace.fs.writeFile(uri, Buffer.from(csv, 'utf-8'));
+        trackExportCsv();
         vscode.window.showInformationMessage(`Exported ${lastResult.length} rows to ${uri.fsPath}`);
       }
     })
@@ -213,6 +230,7 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
       const nbEdit = vscode.NotebookEdit.insertCells(newCellIndex, [cell]);
       edit.set(editor.notebook.uri, [nbEdit]);
       await vscode.workspace.applyEdit(edit);
+      trackChartAdded();
 
       // Instantly run the newly added chart cell so the UI appears automatically
       await vscode.commands.executeCommand('notebook.cell.execute', {
@@ -241,6 +259,7 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
       const data = new vscode.NotebookData(cells);
       const doc = await vscode.workspace.openNotebookDocument('sql-notebook', data);
       await vscode.window.showNotebookDocument(doc);
+      trackNewNotebook();
     })
   );
 
