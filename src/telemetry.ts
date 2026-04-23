@@ -1,14 +1,11 @@
-import * as https from 'https';
 import * as crypto from 'crypto';
 import * as vscode from 'vscode';
+import { PostHog } from 'posthog-node';
 
 // ─── Configuration ────────────────────────────────────────────────────────────
-// Replace with your real Yandex Metrica counter ID
-const COUNTER_ID = '108726342';
-
-// Base URL for Yandex Metrica Hit API
-const YM_HIT_HOST = 'mc.yandex.ru';
-const YM_HIT_PATH = '/watch/' + COUNTER_ID;
+// Replace with your real PostHog API key
+const POSTHOG_API_KEY = 'phc_AGCpudXjhXVqQCoE8peBnaZMzeR8B8uPovRDFhSfoZhc';
+const POSTHOG_HOST = 'https://app.posthog.com';
 
 // Extension version (read once at startup)
 let _extensionVersion = 'unknown';
@@ -21,6 +18,8 @@ let _clientId: string | undefined;
 
 let _telemetryEnabled = true;
 let _initialized = false;
+
+let _client: PostHog | undefined;
 
 // ─── Init ─────────────────────────────────────────────────────────────────────
 
@@ -56,122 +55,82 @@ export function initTelemetry(context: vscode.ExtensionContext): void {
 
     // New session — reset session ID
     _sessionId = crypto.randomBytes(8).toString('hex');
+
+    // Initialize PostHog
+    _client = new PostHog(POSTHOG_API_KEY, { host: POSTHOG_HOST });
+}
+
+export function shutdownTelemetry(): void {
+    if (_client) {
+        _client.shutdown();
+    }
 }
 
 // ─── Public tracking functions ────────────────────────────────────────────────
 
 /** Track extension activation */
 export function trackActivation(): void {
-    _hit('/activate', 'SQL Notebook: Activate');
+    _capture('SQL Notebook: Activate');
 }
 
 /** Track successful database connection */
 export function trackConnect(): void {
-    _hit('/connect', 'SQL Notebook: Connect');
+    _capture('SQL Notebook: Connect');
 }
 
 /** Track disconnection */
 export function trackDisconnect(): void {
-    _hit('/disconnect', 'SQL Notebook: Disconnect');
+    _capture('SQL Notebook: Disconnect');
 }
 
 /** Track a SQL query execution */
 export function trackQueryRun(elapsedMs?: number): void {
-    const params: Record<string, string> = {};
+    const params: Record<string, any> = {};
     if (elapsedMs !== undefined) {
+        params['duration_ms'] = elapsedMs;
         // Bucket query time into rough categories for privacy
-        if (elapsedMs < 500)       { params['qt'] = 'fast'; }
-        else if (elapsedMs < 3000) { params['qt'] = 'medium'; }
-        else                       { params['qt'] = 'slow'; }
+        if (elapsedMs < 500)       { params['qt_bucket'] = 'fast'; }
+        else if (elapsedMs < 3000) { params['qt_bucket'] = 'medium'; }
+        else                       { params['qt_bucket'] = 'slow'; }
     }
-    _hit('/query_run', 'SQL Notebook: Query Run', params);
+    _capture('SQL Notebook: Query Run', params);
 }
 
 /** Track chart cell added */
 export function trackChartAdded(): void {
-    _hit('/chart_added', 'SQL Notebook: Chart Added');
+    _capture('SQL Notebook: Chart Added');
 }
 
 /** Track CSV export */
 export function trackExportCsv(): void {
-    _hit('/export_csv', 'SQL Notebook: Export CSV');
+    _capture('SQL Notebook: Export CSV');
 }
 
 /** Track schema view */
 export function trackShowSchema(): void {
-    _hit('/show_schema', 'SQL Notebook: Show Schema');
+    _capture('SQL Notebook: Show Schema');
 }
 
 /** Track new notebook created */
 export function trackNewNotebook(): void {
-    _hit('/new_notebook', 'SQL Notebook: New Notebook');
+    _capture('SQL Notebook: New Notebook');
 }
 
-// ─── Core Hit ─────────────────────────────────────────────────────────────────
+// ─── Core Capture ─────────────────────────────────────────────────────────────────
 
 /**
- * Sends a single hit to Yandex Metrica via the Hit API.
- *
- * Yandex Metrica Hit API (mc.yandex.ru/watch/<COUNTER_ID>) accepts:
- *   - `page-url`  : The page/event URL (used as virtual path)
- *   - `page-title`: Human-readable title
- *   - `browser-info`: packed info string (uid, etc.)
- *   - `rn`: random number (cache-buster)
- *
- * Docs: https://yandex.ru/support/metrica/data/hit-api.html
+ * Sends a single hit to PostHog.
  */
-function _hit(
-    virtualPath: string,
-    title: string,
-    extraParams: Record<string, string> = {}
-): void {
-    if (!_telemetryEnabled) { return; }
-    if (!_clientId) { return; } // Not yet initialized
+function _capture(eventName: string, extraParams: Record<string, any> = {}): void {
+    if (!_telemetryEnabled || !_clientId || !_client) { return; }
 
-    // Compose a virtual URL that shows up in Yandex Metrica reports
-    const pageUrl = `https://github.com/YaDilmurod/sqlnb${virtualPath}?v=${_extensionVersion}&s=${_sessionId}`;
-
-    // browser-info is a Yandex-specific packed string.
-    // We include: uid (anonymous client id) and the session id.
-    const browserInfo = [
-        `uid:${_clientId}`,
-        `rn:${Math.floor(Math.random() * 1e9)}`,
-        `v:${_extensionVersion}`,
-    ].join(':');
-
-    const queryParams = new URLSearchParams({
-        'page-url':    pageUrl,
-        'page-title':  title,
-        'browser-info': browserInfo,
-        'rn':          String(Math.floor(Math.random() * 1e9)),
-        ...extraParams,
+    _client.capture({
+        distinctId: _clientId,
+        event: eventName,
+        properties: {
+            $session_id: _sessionId,
+            extension_version: _extensionVersion,
+            ...extraParams
+        }
     });
-
-    const reqPath = `${YM_HIT_PATH}?${queryParams.toString()}`;
-
-    const options: https.RequestOptions = {
-        hostname: YM_HIT_HOST,
-        path: reqPath,
-        method: 'GET',
-        headers: {
-            // Spoof a minimal browser-like User-Agent so YM doesn't reject it as a bot
-            'User-Agent': `Mozilla/5.0 (VSCode-Extension; SQLNotebook/${_extensionVersion})`,
-            'Accept': '*/*',
-        },
-    };
-
-    const req = https.request(options, (res) => {
-        // Drain response to free the socket; we don't need to read it
-        res.resume();
-    });
-
-    req.on('error', () => {
-        // Silently ignore network errors — telemetry must never crash the extension
-    });
-
-    req.setTimeout(5000, () => {
-        req.destroy();
-    });
-
-    req.end();
 }

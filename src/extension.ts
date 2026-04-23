@@ -10,6 +10,7 @@ import {
   trackExportCsv,
   trackChartAdded,
   trackNewNotebook,
+  shutdownTelemetry,
 } from './telemetry';
 
 let controller: SqlNotebookController;
@@ -31,7 +32,7 @@ function updateStatusBar() {
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  // --- Telemetry: init Yandex Metrica and fire activation event ---
+  // --- Telemetry: init PostHog and fire activation event ---
   initTelemetry(context);
   trackActivation();
 
@@ -288,4 +289,5 @@ export function deactivate() {
   if (controller) {
     controller.disconnect();
   }
+  shutdownTelemetry();
 }
