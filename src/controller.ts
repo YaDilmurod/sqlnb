@@ -1,14 +1,18 @@
 import * as vscode from 'vscode';
-import { Pool } from 'pg';
+import { IDatabaseDriver } from './drivers/types';
+import { PostgresDriver } from './drivers/postgres';
+import { DuckDbDriver } from './drivers/duckdb';
 import { StoredResult, buildChartPayload, buildAggregationQuery } from './chart-engine';
 import { trackQueryRun, getTelemetryContext } from './telemetry';
+
+export type DriverType = 'postgres' | 'duckdb';
 
 export class SqlNotebookController {
   private readonly _notebookType = 'sql-notebook';
   private readonly _supportedLanguages = ['sql', 'chart'];
 
   private _controller: vscode.NotebookController;
-  private _pool: Pool | null = null;
+  private _driver: IDatabaseDriver | null = null;
   private _lastResult: Record<string, any>[] = [];
   private _resultStore: Map<string, StoredResult> = new Map();
   private _dfCounter = 0;
@@ -18,6 +22,7 @@ export class SqlNotebookController {
     public readonly id: string,
     public readonly label: string,
     public connectionString: string | null,
+    public readonly driverType: DriverType,
     private readonly onControllerSelected: (controller: SqlNotebookController, notebook: vscode.NotebookDocument) => void
   ) {
     this._controller = vscode.notebooks.createNotebookController(
@@ -31,7 +36,9 @@ export class SqlNotebookController {
     this._controller.executeHandler = this._execute.bind(this);
     this._controller.interruptHandler = this._interrupt.bind(this);
     
-    if (connectionString) {
+    if (driverType === 'duckdb') {
+      this._controller.detail = 'Query local CSV/Excel files';
+    } else if (connectionString) {
       try {
          const url = new URL(connectionString);
          this._controller.detail = `${url.pathname.slice(1)}@${url.hostname}`;
@@ -44,35 +51,41 @@ export class SqlNotebookController {
   }
 
   get isConnected(): boolean {
-    return this._pool !== null;
+    return this._driver !== null && this._driver.isConnected();
   }
 
   get resultStore(): Map<string, StoredResult> {
     return this._resultStore;
   }
 
-  async connect(connStr: string): Promise<{ success: boolean; error?: string }> {
+  private _createDriver(): IDatabaseDriver {
+    if (this.driverType === 'duckdb') {
+      return new DuckDbDriver();
+    }
+    return new PostgresDriver();
+  }
+
+  async connect(connStr?: string): Promise<{ success: boolean; error?: string }> {
     try {
-      if (this._pool) {
-        await this._pool.end();
+      if (this._driver) {
+        await this._driver.disconnect();
       }
-      this.connectionString = connStr;
-      this._pool = new Pool({ connectionString: connStr });
-
-      const client = await this._pool.connect();
-      client.release();
-
+      if (connStr) {
+        this.connectionString = connStr;
+      }
+      this._driver = this._createDriver();
+      await this._driver.connect(this.connectionString || undefined);
       return { success: true };
     } catch (err: any) {
-      this._pool = null;
+      this._driver = null;
       return { success: false, error: err.message };
     }
   }
 
   async disconnect(): Promise<void> {
-    if (this._pool) {
-      await this._pool.end();
-      this._pool = null;
+    if (this._driver) {
+      await this._driver.disconnect();
+      this._driver = null;
     }
   }
 
@@ -84,10 +97,6 @@ export class SqlNotebookController {
     await this._executeCell(cell, { column, direction });
   }
 
-  /**
-   * Execute a server-side aggregation query for the chart renderer.
-   * Takes the original query from a stored result and wraps it in a GROUP BY.
-   */
   public async executeChartAggregation(
     datasetKey: string,
     xCol: string,
@@ -100,31 +109,23 @@ export class SqlNotebookController {
       return { rows: [], elapsedMs: 0, error: 'Dataset not found. Please re-run the SQL cell.' };
     }
 
-    if (!this._pool) {
-      if (this.connectionString) {
-        const res = await this.connect(this.connectionString);
-        if (!res.success) {
-          return { rows: [], elapsedMs: 0, error: `Connection failed: ${res.error}` };
-        }
-      } else {
-        return { rows: [], elapsedMs: 0, error: 'Not connected to a database.' };
+    if (!this._driver || !this._driver.isConnected()) {
+      const res = await this.connect();
+      if (!res.success) {
+        return { rows: [], elapsedMs: 0, error: `Connection failed: ${res.error}` };
       }
     }
 
     const aggQuery = buildAggregationQuery(stored.query, xCol, yCol, aggFn, colorCol || undefined);
     
     const startTime = performance.now();
-    let client;
     try {
-      client = await this._pool!.connect();
-      const result = await client.query(aggQuery);
+      const result = await (this._driver as any).executeRaw(aggQuery);
       const elapsed = performance.now() - startTime;
       return { rows: result.rows || [], elapsedMs: elapsed };
     } catch (err: any) {
       const elapsed = performance.now() - startTime;
       return { rows: [], elapsedMs: elapsed, error: err.message };
-    } finally {
-      if (client) client.release();
     }
   }
 
@@ -135,9 +136,8 @@ export class SqlNotebookController {
   ): Promise<void> {
     this.onControllerSelected(this, notebook);
 
-    // Auto connect if needed
-    if (!this._pool && this.connectionString) {
-      const res = await this.connect(this.connectionString);
+    if (!this._driver || !this._driver.isConnected()) {
+      const res = await this.connect();
       if (!res.success) {
         for (const cell of cells) {
           const execution = this._controller.createNotebookCellExecution(cell);
@@ -162,14 +162,12 @@ export class SqlNotebookController {
   }
 
   private async _interrupt(notebook: vscode.NotebookDocument): Promise<void> {
-    if (!this._pool) return;
+    if (!this._driver) return;
     for (const cell of notebook.getCells()) {
       const pid = this._activeQueries.get(cell.document.uri.toString());
       if (pid) {
         try {
-          const cancelClient = await this._pool.connect();
-          await cancelClient.query(`SELECT pg_cancel_backend(${pid})`);
-          cancelClient.release();
+          await this._driver.cancelQuery(pid);
         } catch (err) {
           console.error("Failed to cancel query", err);
         }
@@ -182,7 +180,6 @@ export class SqlNotebookController {
     execution.executionOrder = Date.now();
     execution.start(Date.now());
 
-    // ── Chart cell: send metadata payload to chart renderer ──
     if (cell.document.languageId === 'chart') {
       const results = Array.from(this._resultStore.values());
       const payload = buildChartPayload(results, getTelemetryContext());
@@ -195,7 +192,6 @@ export class SqlNotebookController {
       return;
     }
 
-    // ── SQL cell ──
     let query = cell.document.getText().trim();
     if (!query) {
       execution.replaceOutput([new vscode.NotebookCellOutput([vscode.NotebookCellOutputItem.text('Empty query — nothing to execute.', 'text/plain')])]);
@@ -203,9 +199,7 @@ export class SqlNotebookController {
       return;
     }
 
-    // Store original query text before any modifications
     const originalQueryText = query;
-
     query = query.replace(/;+\s*$/, '');
     const cleanQuery = query.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '').trim();
 
@@ -213,11 +207,11 @@ export class SqlNotebookController {
       query = `SELECT * FROM (\n${query}\n) AS _sqlnb_sort ORDER BY "${sortOptions.column}" ${sortOptions.direction}`;
     }
 
-    if (!this._pool) {
+    if (!this._driver || !this._driver.isConnected()) {
       execution.replaceOutput([
         new vscode.NotebookCellOutput([
           vscode.NotebookCellOutputItem.text(
-            this._renderError('Not connected to a database. Please select a valid connection from the Kernel Picker (top right) or add a new one.'),
+            this._renderError('Not connected to a database. Please select a valid connection from the Kernel Picker (top right).'),
             'text/html'
           ),
         ]),
@@ -231,54 +225,24 @@ export class SqlNotebookController {
     try {
       const startTime = performance.now();
       const isSelect = /^(SELECT|WITH|VALUES|TABLE|\()/i.test(cleanQuery);
-      let rows: Record<string, any>[] = [];
-      let fields: any[] = [];
-      let command = '';
-      let rowCount = 0;
-      let hasMore = false;
+      const cellUriStr = cell.document.uri.toString();
+
+      const pid = await this._driver.getBackendPid();
+      if (pid !== undefined) {
+        this._activeQueries.set(cellUriStr, pid);
+      }
+
+      let result;
       let totalEstimatedRows: number | undefined;
 
-      const cellUriStr = cell.document.uri.toString();
-      const client = await this._pool!.connect();
-      
       try {
-        const pidRes = await client.query('SELECT pg_backend_pid()');
-        this._activeQueries.set(cellUriStr, pidRes.rows[0].pg_backend_pid);
-
         if (isSelect) {
-          try {
-            const explainRes = await client.query(`EXPLAIN (FORMAT JSON) ${query}`);
-            if (explainRes.rows && explainRes.rows[0] && explainRes.rows[0]['QUERY PLAN']) {
-              totalEstimatedRows = explainRes.rows[0]['QUERY PLAN'][0].Plan['Plan Rows'];
-            }
-          } catch (e) {}
-
-          await client.query('BEGIN');
-          await client.query(`DECLARE _sqlnb_cursor NO SCROLL CURSOR FOR ${query}`);
-          const result = await client.query(`FETCH ${maxRows + 1} FROM _sqlnb_cursor`);
-          await client.query('CLOSE _sqlnb_cursor');
-          await client.query('COMMIT');
-
-          rows = result.rows || [];
-          fields = result.fields || [];
-          command = 'SELECT';
-
-          if (rows.length > maxRows) {
-            hasMore = true;
-            rows = rows.slice(0, maxRows);
-          }
-          rowCount = rows.length;
+          totalEstimatedRows = await this._driver.getEstimatedRows(query);
+          result = await this._driver.executeSelect(query, maxRows);
         } else {
-          const result = await client.query(query);
-          rows = result.rows || [];
-          fields = result.fields || [];
-          command = result.command || '';
-          rowCount = result.rowCount ?? 0;
+          result = await this._driver.executeStatement(query);
         }
       } catch (err: any) {
-        if (isSelect) {
-          try { await client.query('ROLLBACK'); } catch { }
-        }
         if (err.message && err.message.includes('canceling statement due to user request')) {
            execution.replaceOutput([
              new vscode.NotebookCellOutput([
@@ -291,24 +255,30 @@ export class SqlNotebookController {
         throw err;
       } finally {
         this._activeQueries.delete(cellUriStr);
-        client.release();
       }
 
       const elapsed = performance.now() - startTime;
-      this._lastResult = rows;
+      this._lastResult = result.rows;
 
-      if (rows.length > 0) {
-        const headers = fields.map((f: any) => f.name);
+      if (result.rows.length > 0) {
+        const headers = result.fields.map((f: any) => f.name);
         const cellKey = cell.document.uri.toString();
         
         const payload = {
-          rows, fields, elapsedMs: elapsed, fetchedCount: rows.length, hasMore, maxRows, cellUriStr: cellKey, currentSort: sortOptions, totalEstimatedRows
+          rows: result.rows,
+          fields: result.fields,
+          elapsedMs: elapsed,
+          fetchedCount: result.rows.length,
+          hasMore: result.hasMore,
+          maxRows,
+          cellUriStr: cellKey,
+          currentSort: sortOptions,
+          totalEstimatedRows
         };
 
-        // Store result AND original query for chart aggregation
         this._dfCounter++;
         const label = 'df_' + this._dfCounter;
-        this._resultStore.set(cellKey, { key: cellKey, label, rows, columns: headers, query: originalQueryText });
+        this._resultStore.set(cellKey, { key: cellKey, label, rows: result.rows, columns: headers, query: originalQueryText });
 
         execution.replaceOutput([
           new vscode.NotebookCellOutput([
@@ -316,7 +286,7 @@ export class SqlNotebookController {
           ]),
         ]);
       } else {
-        const html = this._renderSuccess(command, rowCount, elapsed);
+        const html = this._renderSuccess(result.command, result.rowCount, elapsed);
         execution.replaceOutput([
           new vscode.NotebookCellOutput([
             vscode.NotebookCellOutputItem.text(html, 'text/html'),

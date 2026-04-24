@@ -32,7 +32,7 @@ export interface ChartRendererPayload {
 
 /**
  * Build the payload that gets sent to the chart renderer.
- * We include a small sample of rows (first 5) so the renderer can detect
+ * We include a small sample of rows (first 20) so the renderer can detect
  * column types (numeric vs string vs date) for smart defaults.
  */
 export function buildChartPayload(
@@ -51,7 +51,7 @@ export function buildChartPayload(
 }
 
 /**
- * Build a PostgreSQL aggregation query that wraps the user's original query.
+ * Build a PostgreSQL/DuckDB aggregation query that wraps the user's original query.
  * This runs the aggregation server-side so we get accurate results even for
  * datasets with millions of rows.
  */

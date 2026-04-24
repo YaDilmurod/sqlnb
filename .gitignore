@@ -4,3 +4,4 @@ out/
 versions/
 *.vsix
 .DS_Store
+RULES.md

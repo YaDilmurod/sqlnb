@@ -2,6 +2,29 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.0.51]
+- **Feature:** DuckDB Integration! Users can now query local `.csv` and `.xlsx` files directly using SQL — no PostgreSQL server required. Select the **Local Files (DuckDB)** kernel from the top-right picker and run `SELECT * FROM 'data/sales.csv';`.
+- **Architecture:** Introduced a `IDatabaseDriver` abstraction (`src/drivers/types.ts`) with dedicated PostgreSQL and DuckDB driver implementations for clean engine-agnostic code.
+
+## [0.0.50]
+- **Feature:** Server-Side Chart Aggregation! Charts now push `GROUP BY` queries directly to the database, enabling accurate visualization of datasets with 100k+ rows.
+- **Feature:** Added a custom Chart Notebook Renderer (`sqlnb-chart-renderer`) with bidirectional messaging to the extension host for real-time aggregation.
+- **UX:** Added a polished animated loading overlay (spinner + indeterminate progress bar) to the chart while server-side aggregation is running.
+- **Fix:** Sort By / Sort Direction / Chart Type changes no longer trigger unnecessary database round-trips — they re-render instantly from cached aggregation data.
+
+## [0.0.49]
+- **Docs:** Updated initial notebook helper with OS-specific shortcuts (Cmd+Shift+P / Ctrl+Shift+P) and PostgreSQL connection string example.
+
+## [0.0.48]
+- **Feature:** Native Kernel Picker! Each saved database connection now appears as a separate kernel in the VS Code top-right picker — just like Python virtual environments.
+- **Feature:** Auto-detection of PostgreSQL connection strings from workspace `.env` files.
+- **Feature:** Connections can now be saved to **Workspace Settings** (`.vscode/settings.json`) in addition to Global Settings.
+- **Architecture:** Introduced `ControllerManager` to dynamically manage multiple `SqlNotebookController` instances.
+
+## [0.0.41]
+- **Feature:** Auto-detect PostgreSQL connections from `.env` files in the workspace root.
+- **Feature:** Users can now choose to save new connections to either Global Settings or Workspace Settings.
+
 ## [0.0.40]
 - **Bug Fix:** Server-side sorting now perfectly handles queries that end with a trailing semicolon (`;`).
 

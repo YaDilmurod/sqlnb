@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { SqlNotebookController } from './controller';
+import { SqlNotebookController, DriverType } from './controller';
 
 export class ControllerManager {
   private controllers: Map<string, SqlNotebookController> = new Map();
@@ -41,7 +41,6 @@ export class ControllerManager {
       if (msg.type === 'chart-aggregate') {
         const { requestId, datasetKey, xCol, yCol, colorCol, aggFn } = msg;
 
-        // Find which controller owns this dataset
         let ctrl: SqlNotebookController | undefined;
         for (const c of this.controllers.values()) {
           if (c.resultStore.has(datasetKey)) {
@@ -49,7 +48,6 @@ export class ControllerManager {
             break;
           }
         }
-        // Fallback: try active controller for active notebook
         if (!ctrl) {
           ctrl = this.getActiveController();
         }
@@ -101,14 +99,19 @@ export class ControllerManager {
      }
      this.controllers.clear();
 
+     // ── Always-available DuckDB kernel for local file queries ──
+     this.createController('sqlnb-local-duckdb', '$(folder) Local Files (DuckDB)', null, 'duckdb');
+
+     // ── PostgreSQL connections from settings ──
      const config = vscode.workspace.getConfiguration('sqlNotebook');
      const savedMap = config.get<Record<string, string>>('connections') || {};
 
      for (const [name, url] of Object.entries(savedMap)) {
         const id = `sqlnb-conn-${Buffer.from(name).toString('base64').replace(/=/g, '')}`;
-        this.createController(id, `$(database) ${name}`, url);
+        this.createController(id, `$(database) ${name}`, url, 'postgres');
      }
 
+     // ── PostgreSQL connections from .env files ──
      if (vscode.workspace.workspaceFolders) {
         for (const folder of vscode.workspace.workspaceFolders) {
           try {
@@ -124,22 +127,18 @@ export class ControllerManager {
                 const val = trimmed.substring(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
                 if (val.startsWith('postgres://') || val.startsWith('postgresql://')) {
                   const id = `sqlnb-env-${Buffer.from(key).toString('base64').replace(/=/g, '')}`;
-                  this.createController(id, `$(file) ${key} (.env)`, val);
+                  this.createController(id, `$(file) ${key} (.env)`, val, 'postgres');
                 }
               }
             }
           } catch (e) {}
         }
      }
-
-     if (this.controllers.size === 0) {
-        this.createController('sqlnb-default', 'SQL Notebook (No Connection)', null);
-     }
   }
 
-  private createController(id: string, label: string, url: string | null) {
+  private createController(id: string, label: string, url: string | null, driverType: DriverType) {
      if (this.controllers.has(id)) return;
-     const ctrl = new SqlNotebookController(id, label, url, (c, nb) => {
+     const ctrl = new SqlNotebookController(id, label, url, driverType, (c, nb) => {
         this.activeNotebookControllers.set(nb.uri.toString(), c);
         this.updateStatusBar(c);
      });
