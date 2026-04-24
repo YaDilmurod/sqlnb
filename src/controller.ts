@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { Pool } from 'pg';
-import { generateStandaloneChart, StoredResult } from './chart-engine';
+import { StoredResult, buildChartPayload, buildAggregationQuery } from './chart-engine';
 import { trackQueryRun, getTelemetryContext } from './telemetry';
 
 export class SqlNotebookController {
@@ -47,6 +47,10 @@ export class SqlNotebookController {
     return this._pool !== null;
   }
 
+  get resultStore(): Map<string, StoredResult> {
+    return this._resultStore;
+  }
+
   async connect(connStr: string): Promise<{ success: boolean; error?: string }> {
     try {
       if (this._pool) {
@@ -78,6 +82,50 @@ export class SqlNotebookController {
 
   public async executeWithSort(cell: vscode.NotebookCell, column: string, direction: 'ASC' | 'DESC') {
     await this._executeCell(cell, { column, direction });
+  }
+
+  /**
+   * Execute a server-side aggregation query for the chart renderer.
+   * Takes the original query from a stored result and wraps it in a GROUP BY.
+   */
+  public async executeChartAggregation(
+    datasetKey: string,
+    xCol: string,
+    yCol: string,
+    aggFn: string,
+    colorCol?: string
+  ): Promise<{ rows: Record<string, any>[]; elapsedMs: number; error?: string }> {
+    const stored = this._resultStore.get(datasetKey);
+    if (!stored) {
+      return { rows: [], elapsedMs: 0, error: 'Dataset not found. Please re-run the SQL cell.' };
+    }
+
+    if (!this._pool) {
+      if (this.connectionString) {
+        const res = await this.connect(this.connectionString);
+        if (!res.success) {
+          return { rows: [], elapsedMs: 0, error: `Connection failed: ${res.error}` };
+        }
+      } else {
+        return { rows: [], elapsedMs: 0, error: 'Not connected to a database.' };
+      }
+    }
+
+    const aggQuery = buildAggregationQuery(stored.query, xCol, yCol, aggFn, colorCol || undefined);
+    
+    const startTime = performance.now();
+    let client;
+    try {
+      client = await this._pool!.connect();
+      const result = await client.query(aggQuery);
+      const elapsed = performance.now() - startTime;
+      return { rows: result.rows || [], elapsedMs: elapsed };
+    } catch (err: any) {
+      const elapsed = performance.now() - startTime;
+      return { rows: [], elapsedMs: elapsed, error: err.message };
+    } finally {
+      if (client) client.release();
+    }
   }
 
   private async _execute(
@@ -134,25 +182,29 @@ export class SqlNotebookController {
     execution.executionOrder = Date.now();
     execution.start(Date.now());
 
+    // ── Chart cell: send metadata payload to chart renderer ──
     if (cell.document.languageId === 'chart') {
       const results = Array.from(this._resultStore.values());
-      const vizId = 'sqlnb_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
-      const html = generateStandaloneChart(results, vizId, this._escapeHtml, getTelemetryContext());
+      const payload = buildChartPayload(results, getTelemetryContext());
       execution.replaceOutput([
         new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.text(html, 'text/html'),
+          vscode.NotebookCellOutputItem.json(payload, 'application/vnd.sqlnb.chart'),
         ]),
       ]);
       execution.end(true, Date.now());
       return;
     }
 
+    // ── SQL cell ──
     let query = cell.document.getText().trim();
     if (!query) {
       execution.replaceOutput([new vscode.NotebookCellOutput([vscode.NotebookCellOutputItem.text('Empty query — nothing to execute.', 'text/plain')])]);
       execution.end(true, Date.now());
       return;
     }
+
+    // Store original query text before any modifications
+    const originalQueryText = query;
 
     query = query.replace(/;+\s*$/, '');
     const cleanQuery = query.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '').trim();
@@ -253,9 +305,10 @@ export class SqlNotebookController {
           rows, fields, elapsedMs: elapsed, fetchedCount: rows.length, hasMore, maxRows, cellUriStr: cellKey, currentSort: sortOptions, totalEstimatedRows
         };
 
+        // Store result AND original query for chart aggregation
         this._dfCounter++;
         const label = 'df_' + this._dfCounter;
-        this._resultStore.set(cellKey, { key: cellKey, label, rows, columns: headers });
+        this._resultStore.set(cellKey, { key: cellKey, label, rows, columns: headers, query: originalQueryText });
 
         execution.replaceOutput([
           new vscode.NotebookCellOutput([

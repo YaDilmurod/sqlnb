@@ -4,11 +4,13 @@ import { SqlNotebookController } from './controller';
 export class ControllerManager {
   private controllers: Map<string, SqlNotebookController> = new Map();
   private activeNotebookControllers: Map<string, SqlNotebookController> = new Map();
-  private messaging = vscode.notebooks.createRendererMessaging('sqlnb-table-renderer');
+  private tableMessaging = vscode.notebooks.createRendererMessaging('sqlnb-table-renderer');
+  private chartMessaging = vscode.notebooks.createRendererMessaging('sqlnb-chart-renderer');
   private disposables: vscode.Disposable[] = [];
 
   constructor(private updateStatusBar: (ctrl: SqlNotebookController | undefined) => void) {
-    this.disposables.push(this.messaging.onDidReceiveMessage((e) => {
+    // ── Table renderer messaging (server-side sorting) ──
+    this.disposables.push(this.tableMessaging.onDidReceiveMessage((e) => {
       const { cellUriStr, column, direction } = e.message;
       if (cellUriStr && column && direction) {
         let targetCell: vscode.NotebookCell | undefined;
@@ -30,6 +32,50 @@ export class ControllerManager {
             ctrl.executeWithSort(targetCell, column, direction);
           }
         }
+      }
+    }));
+
+    // ── Chart renderer messaging (server-side aggregation) ──
+    this.disposables.push(this.chartMessaging.onDidReceiveMessage(async (e) => {
+      const msg = e.message;
+      if (msg.type === 'chart-aggregate') {
+        const { requestId, datasetKey, xCol, yCol, colorCol, aggFn } = msg;
+
+        // Find which controller owns this dataset
+        let ctrl: SqlNotebookController | undefined;
+        for (const c of this.controllers.values()) {
+          if (c.resultStore.has(datasetKey)) {
+            ctrl = c;
+            break;
+          }
+        }
+        // Fallback: try active controller for active notebook
+        if (!ctrl) {
+          ctrl = this.getActiveController();
+        }
+
+        if (!ctrl) {
+          this.chartMessaging.postMessage({
+            type: 'chart-aggregate-result',
+            requestId,
+            rows: [],
+            elapsedMs: 0,
+            error: 'No active database connection found. Please select a kernel and re-run your SQL cell.'
+          });
+          return;
+        }
+
+        const result = await ctrl.executeChartAggregation(
+          datasetKey, xCol, yCol, aggFn, colorCol || undefined
+        );
+
+        this.chartMessaging.postMessage({
+          type: 'chart-aggregate-result',
+          requestId,
+          rows: result.rows,
+          elapsedMs: result.elapsedMs,
+          error: result.error
+        });
       }
     }));
 
