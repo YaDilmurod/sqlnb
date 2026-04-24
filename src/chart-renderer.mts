@@ -12,10 +12,12 @@ function esc(s: string): string {
 }
 
 export function activate(ctx: any) {
+    const globalState = new Map<string, any>();
+    
     return {
         renderOutputItem(outputItem: any, element: any) {
             const payload = outputItem.json();
-            const { datasets, telemetry } = payload;
+            const { datasets, telemetry, cellId } = payload;
 
             if (!datasets || datasets.length === 0) {
                 element.innerHTML = '<div style="font-family:system-ui;color:#888;padding:16px;border:1px solid #ddd;border-radius:4px;">No query results available. Run SQL cells first, then re-run this chart cell.</div>';
@@ -169,20 +171,35 @@ export function activate(ctx: any) {
                 el.innerHTML = html;
             }
 
-            function initDataset() {
-                currentDatasetIdx = parseInt($('ds')?.value || '0') || 0;
+            function initDataset(restore: boolean = false) {
+                currentDatasetIdx = parseInt(restore && savedState.ds ? savedState.ds : ($('ds')?.value || '0')) || 0;
+                if (currentDatasetIdx >= DATASETS.length) currentDatasetIdx = 0;
+                
                 const ds = DATASETS[currentDatasetIdx];
+                if (!ds) return;
+
                 populateSelect('x', ds.columns, true);
                 populateSelect('y', ds.columns, true);
                 populateSelect('color', ds.columns, true);
                 
-                const typeEl = $('type');
-                const xEl = $('x');
-                const yEl = $('y');
-                
-                if (typeEl) typeEl.value = 'bar';
-                if (xEl) xEl.value = '';
-                if (yEl) yEl.value = '';
+                if (restore && savedState.ds !== undefined) {
+                    if ($('ds')) $('ds').value = savedState.ds;
+                    if ($('type')) $('type').value = savedState.type;
+                    if ($('x')) $('x').value = savedState.x;
+                    if ($('y')) $('y').value = savedState.y;
+                    if ($('color')) $('color').value = savedState.color;
+                    if ($('agg')) $('agg').value = savedState.agg;
+                    if ($('sort-by')) $('sort-by').value = savedState.sortBy;
+                    if ($('sort-dir')) $('sort-dir').value = savedState.sortDir;
+                } else {
+                    const typeEl = $('type');
+                    const xEl = $('x');
+                    const yEl = $('y');
+                    
+                    if (typeEl) typeEl.value = 'bar';
+                    if (xEl) xEl.value = '';
+                    if (yEl) yEl.value = '';
+                }
 
                 lastAggRows = null;
                 if (myChart) myChart.clear();
@@ -441,10 +458,26 @@ export function activate(ctx: any) {
                 });
             }
 
+            const stateKey = cellId || vizId;
+            const savedState = globalState.get(stateKey) || {};
+
+            function saveState() {
+                globalState.set(stateKey, {
+                    ds: $('ds')?.value,
+                    type: $('type')?.value,
+                    x: $('x')?.value,
+                    y: $('y')?.value,
+                    color: $('color')?.value,
+                    agg: $('agg')?.value,
+                    sortBy: $('sort-by')?.value,
+                    sortDir: $('sort-dir')?.value
+                });
+            }
+
             // Wire up event handlers
             // Dataset change → full re-init
             const dsEl = $('ds');
-            if (dsEl) dsEl.addEventListener('change', () => { initDataset(); });
+            if (dsEl) dsEl.addEventListener('change', () => { initDataset(false); saveState(); });
 
             // Run chart explicitly
             const runBtn = $('run');
@@ -457,11 +490,22 @@ export function activate(ctx: any) {
             // Chart type, Sort By, Sort Direction → client-side only, re-render from cache
             ['type', 'sort-by', 'sort-dir'].forEach((id: string) => {
                 const el = $(id);
-                if (el) el.addEventListener('change', () => { rerenderFromCache(); });
+                if (el) el.addEventListener('change', () => { rerenderFromCache(); saveState(); });
+            });
+            
+            // Other inputs should save state too
+            ['x', 'y', 'color', 'agg'].forEach((id: string) => {
+                const el = $(id);
+                if (el) el.addEventListener('change', () => { saveState(); });
             });
 
             // Kickoff
-            initDataset();
+            initDataset(true);
+            
+            // Auto-run if state was restored and we have both axes
+            if (savedState.x && savedState.y) {
+                requestAggregation();
+            }
         }
     };
 }

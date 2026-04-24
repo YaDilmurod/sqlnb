@@ -183,6 +183,7 @@ export class SqlNotebookController {
     if (cell.document.languageId === 'chart') {
       const results = Array.from(this._resultStore.values());
       const payload = buildChartPayload(results, getTelemetryContext());
+      (payload as any).cellId = cell.document.uri.toString();
       execution.replaceOutput([
         new vscode.NotebookCellOutput([
           vscode.NotebookCellOutputItem.json(payload, 'application/vnd.sqlnb.chart'),

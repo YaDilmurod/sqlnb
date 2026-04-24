@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import { SqlNotebookSerializer } from './serializer';
 import { ControllerManager } from './manager';
 import { SqlNotebookController } from './controller';
+import { buildChartPayload } from './chart-engine';
 import {
   initTelemetry,
   trackActivation,
@@ -12,6 +13,7 @@ import {
   trackChartAdded,
   trackNewNotebook,
   shutdownTelemetry,
+  getTelemetryContext
 } from './telemetry';
 
 let manager: ControllerManager;
@@ -228,16 +230,21 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
       
       cell.metadata = { inputCollapsed: true };
 
+      const ctrl = manager.getActiveController();
+      const results = ctrl ? Array.from(ctrl.resultStore.values()) : [];
+      const payload = buildChartPayload(results, getTelemetryContext());
+      
+      cell.outputs = [
+        new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(payload, 'application/vnd.sqlnb.chart'),
+        ])
+      ];
+
       const edit = new vscode.WorkspaceEdit();
       const nbEdit = vscode.NotebookEdit.insertCells(newCellIndex, [cell]);
       edit.set(editor.notebook.uri, [nbEdit]);
       await vscode.workspace.applyEdit(edit);
       trackChartAdded();
-
-      await vscode.commands.executeCommand('notebook.cell.execute', {
-        ranges: [{ start: newCellIndex, end: newCellIndex + 1 }],
-        document: editor.notebook.uri
-      });
     })
   );
 
