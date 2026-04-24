@@ -246,7 +246,7 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
       const cells = [
         new vscode.NotebookCellData(
           vscode.NotebookCellKind.Markup,
-          '# New SQL Notebook\nSelect your database from the **Kernel Picker** (top right), or click the `$(database)` icon in the status bar to configure connections.',
+          `# Welcome to SQL Notebook\n\n### 🔌 Getting Started\n1. Select your database from the **Kernel Picker** (top right).\n2. Need to add a new connection? Open the command palette:\n   - **Mac:** \`Cmd + Shift + P\`\n   - **Windows/Linux:** \`Ctrl + Shift + P\`\n   - Search for **"SQL Notebook: Connect to Database"** and select **Add New Connection...**.\n\n### 📝 Example Connection String\nWhen prompted, you can use a PostgreSQL URL formatted like this:\n\`postgresql://username:password@localhost:5432/dbname\``,
           'markdown'
         ),
         new vscode.NotebookCellData(
