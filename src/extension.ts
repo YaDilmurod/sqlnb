@@ -82,7 +82,7 @@ export async function activate(context: vscode.ExtensionContext) {
          const connStr = await vscode.window.showInputBox({
             title: 'PostgreSQL Connection String',
             prompt: 'Enter your PostgreSQL connection string',
-            placeHolder: 'postgresql://user:password@localhost:5432/dbname',
+            value: 'postgresql://user:password@localhost:5432/dbname',
             ignoreFocusOut: true,
          }) || '';
          if (!connStr) return;
