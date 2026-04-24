@@ -1,5 +1,6 @@
 import * as vscode from 'vscode';
 import { SqlNotebookSerializer } from './serializer';
+import { ControllerManager } from './manager';
 import { SqlNotebookController } from './controller';
 import {
   initTelemetry,
@@ -13,30 +14,33 @@ import {
   shutdownTelemetry,
 } from './telemetry';
 
-let controller: SqlNotebookController;
+let manager: ControllerManager;
 let statusBarItem: vscode.StatusBarItem;
 
-function updateStatusBar() {
-  if (controller.isConnected) {
+function updateStatusBar(ctrl: SqlNotebookController | undefined) {
+  if (ctrl && ctrl.isConnected) {
     statusBarItem.text = '$(database) SQL: Connected';
-    statusBarItem.tooltip = 'Connected to database — click to disconnect';
+    statusBarItem.tooltip = `Connected: ${ctrl.label}`;
     statusBarItem.command = 'sqlNotebook.disconnect';
     statusBarItem.backgroundColor = undefined;
+  } else if (ctrl) {
+    statusBarItem.text = '$(database) SQL: Selected';
+    statusBarItem.tooltip = `Kernel Selected: ${ctrl.label}. Will connect on run.`;
+    statusBarItem.command = 'sqlNotebook.connect';
+    statusBarItem.backgroundColor = undefined;
   } else {
-    statusBarItem.text = '$(database) SQL: Disconnected';
-    statusBarItem.tooltip = 'Click to connect to database';
+    statusBarItem.text = '$(database) SQL: No Kernel';
+    statusBarItem.tooltip = 'Click to configure connections';
     statusBarItem.command = 'sqlNotebook.connect';
     statusBarItem.backgroundColor = new vscode.ThemeColor('statusBarItem.warningBackground');
   }
   statusBarItem.show();
 }
 
-export function activate(context: vscode.ExtensionContext) {
-  // --- Telemetry: init PostHog and fire activation event ---
+export async function activate(context: vscode.ExtensionContext) {
   initTelemetry(context);
   trackActivation();
 
-  // --- Phase 3: Register the Serializer ---
   context.subscriptions.push(
     vscode.workspace.registerNotebookSerializer(
       'sql-notebook',
@@ -45,43 +49,37 @@ export function activate(context: vscode.ExtensionContext) {
     )
   );
 
-  // --- Phase 4: Register the Controller (execution engine) ---
-  controller = new SqlNotebookController();
-  context.subscriptions.push(controller);
+  manager = new ControllerManager(updateStatusBar);
+  await manager.refreshControllers();
+  context.subscriptions.push(manager);
 
-  // --- Status Bar: DB connection button ---
   statusBarItem = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
   context.subscriptions.push(statusBarItem);
-  updateStatusBar();
+  updateStatusBar(undefined);
 
-  // --- Phase 5: Register Commands ---
-
-  // Connect to database
+  // Connect to database command
   context.subscriptions.push(
     vscode.commands.registerCommand('sqlNotebook.connect', async () => {
       const config = vscode.workspace.getConfiguration('sqlNotebook');
-      const savedStr = config.get<string>('connectionString') || '';
-      const savedMap = config.get<Record<string, string>>('connections') || {};
-
+      
       const items: vscode.QuickPickItem[] = [];
-      for (const [name, url] of Object.entries(savedMap)) {
-        items.push({ label: `$(database) ${name}`, description: url });
-      }
-      if (savedStr && !Object.values(savedMap).includes(savedStr)) {
-        items.push({ label: `$(database) Default (Saved)`, description: savedStr });
-      }
-      items.push({ label: `$(add) Add New Connection...`, description: 'Manually enter a new connection string' });
+      items.push({ label: `$(database) Select Kernel...`, description: 'Open the native VS Code Kernel picker' });
+      items.push({ label: `$(add) Add New Connection...`, description: 'Save a new database connection' });
 
       const choice = await vscode.window.showQuickPick(items, {
-        title: 'Select a Database Connection',
-        placeHolder: 'Choose a saved connection or add a new one'
+        title: 'SQL Notebook Connections',
+        placeHolder: 'Select an action'
       });
 
       if (!choice) return;
 
-      let connStr = '';
+      if (choice.label.includes('Select Kernel')) {
+         vscode.commands.executeCommand('notebook.selectKernel');
+         return;
+      }
+
       if (choice.label.includes('Add New Connection')) {
-         connStr = await vscode.window.showInputBox({
+         const connStr = await vscode.window.showInputBox({
             title: 'PostgreSQL Connection String',
             prompt: 'Enter your PostgreSQL connection string',
             placeHolder: 'postgresql://user:password@localhost:5432/dbname',
@@ -91,42 +89,45 @@ export function activate(context: vscode.ExtensionContext) {
 
          const name = await vscode.window.showInputBox({
             title: 'Save Connection',
-            prompt: 'Enter a friendly name for this connection (or press ESC to skip saving)',
+            prompt: 'Enter a friendly name for this connection',
             ignoreFocusOut: true,
          });
 
          if (name) {
-            const newMap = { ...savedMap, [name]: connStr };
-            await config.update('connections', newMap, vscode.ConfigurationTarget.Global);
-         }
-         await config.update('connectionString', connStr, vscode.ConfigurationTarget.Global);
-      } else {
-         connStr = choice.description || '';
-         await config.update('connectionString', connStr, vscode.ConfigurationTarget.Global);
-      }
+            const saveTargetChoice = await vscode.window.showQuickPick(
+               ['Global Settings', 'Workspace Settings (.vscode/settings.json)'],
+               { title: 'Where should this connection be saved?', ignoreFocusOut: true }
+            );
+            const target = saveTargetChoice?.includes('Workspace') 
+               ? vscode.ConfigurationTarget.Workspace 
+               : vscode.ConfigurationTarget.Global;
 
-      const result = await controller.connect(connStr);
-      if (result.success) {
-        vscode.window.showInformationMessage(`✅ Connected to database`);
-        trackConnect();
-      } else {
-        vscode.window.showErrorMessage(`❌ Connection failed: ${result.error}`);
+            const targetMap = config.inspect<Record<string, string>>('connections');
+            const currentMap = target === vscode.ConfigurationTarget.Workspace ? (targetMap?.workspaceValue || {}) : (targetMap?.globalValue || {});
+            await config.update('connections', { ...currentMap, [name]: connStr }, target);
+            
+            vscode.window.showInformationMessage(`Connection '${name}' added! Please select it from the Kernel Picker (top right).`);
+            
+            setTimeout(() => {
+               vscode.commands.executeCommand('notebook.selectKernel');
+            }, 500);
+            
+            trackConnect();
+         }
       }
-      updateStatusBar();
     })
   );
 
-  // Disconnect
   context.subscriptions.push(
     vscode.commands.registerCommand('sqlNotebook.disconnect', async () => {
-      await controller.disconnect();
+      manager.disconnectAll();
       trackDisconnect();
-      vscode.window.showInformationMessage('Disconnected from database');
-      updateStatusBar();
+      vscode.window.showInformationMessage('Disconnected from all databases');
+      const activeCtrl = manager.getActiveController();
+      updateStatusBar(activeCtrl);
     })
   );
 
-  // Show schema: insert a pre-filled SQL cell into the active notebook
   context.subscriptions.push(
     vscode.commands.registerCommand('sqlNotebook.showSchema', async () => {
       const editor = vscode.window.activeNotebookEditor;
@@ -167,10 +168,14 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
     })
   );
 
-  // Export last result to CSV
   context.subscriptions.push(
     vscode.commands.registerCommand('sqlNotebook.exportCsv', async () => {
-      const lastResult = controller.getLastResult();
+      const ctrl = manager.getActiveController();
+      if (!ctrl) {
+         vscode.window.showWarningMessage('No active database kernel. Please run a query first.');
+         return;
+      }
+      const lastResult = ctrl.getLastResult();
       if (!lastResult || lastResult.length === 0) {
         vscode.window.showWarningMessage('No query results to export. Run a query first.');
         return;
@@ -184,7 +189,6 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
           const val = row[h];
           if (val === null || val === undefined) { return ''; }
           const str = String(val);
-          // Escape quotes and wrap in quotes if contains comma/newline/quote
           if (str.includes(',') || str.includes('\n') || str.includes('"')) {
             return `"${str.replace(/"/g, '""')}"`;
           }
@@ -194,7 +198,6 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
       }
 
       const csv = csvLines.join('\n');
-
       const uri = await vscode.window.showSaveDialog({
         filters: { 'CSV Files': ['csv'] },
         saveLabel: 'Export CSV',
@@ -208,7 +211,6 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
     })
   );
 
-  // Add chart cell to current notebook
   context.subscriptions.push(
     vscode.commands.registerCommand('sqlNotebook.addChart', async () => {
       const editor = vscode.window.activeNotebookEditor;
@@ -224,7 +226,6 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
         'chart'
       );
       
-      // Hide the input editor so it immediately looks like a native UI block
       cell.metadata = { inputCollapsed: true };
 
       const edit = new vscode.WorkspaceEdit();
@@ -233,7 +234,6 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
       await vscode.workspace.applyEdit(edit);
       trackChartAdded();
 
-      // Instantly run the newly added chart cell so the UI appears automatically
       await vscode.commands.executeCommand('notebook.cell.execute', {
         ranges: [{ start: newCellIndex, end: newCellIndex + 1 }],
         document: editor.notebook.uri
@@ -241,13 +241,12 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
     })
   );
 
-  // New notebook
   context.subscriptions.push(
     vscode.commands.registerCommand('sqlNotebook.newNotebook', async () => {
       const cells = [
         new vscode.NotebookCellData(
           vscode.NotebookCellKind.Markup,
-          '# New SQL Notebook\nConnect to your database with `Cmd+Shift+P` → **SQL Notebook: Connect to Database**',
+          '# New SQL Notebook\nSelect your database from the **Kernel Picker** (top right), or click the `$(database)` icon in the status bar to configure connections.',
           'markdown'
         ),
         new vscode.NotebookCellData(
@@ -264,30 +263,14 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
     })
   );
 
-  // Server-side sort triggered by clicking table column headers
   context.subscriptions.push(
-    vscode.commands.registerCommand('sqlNotebook.sortData', async (cellUriStr: string, column: string, direction: 'ASC' | 'DESC') => {
-      if (!cellUriStr || !column || !direction) return;
-      await controller.executeWithSort(cellUriStr, column, direction);
-    })
+    vscode.commands.registerCommand('sqlNotebook.sortData', async () => {})
   );
-
-  // Auto-connect on activation if a connection string is configured
-  const config = vscode.workspace.getConfiguration('sqlNotebook');
-  const autoConn = config.get<string>('connectionString');
-  if (autoConn) {
-    controller.connect(autoConn).then(res => {
-      if (res.success) {
-        vscode.window.showInformationMessage('SQL Notebook: auto-connected to database');
-      }
-      updateStatusBar();
-    });
-  }
 }
 
 export function deactivate() {
-  if (controller) {
-    controller.disconnect();
+  if (manager) {
+    manager.dispose();
   }
   shutdownTelemetry();
 }

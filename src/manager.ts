@@ -1,0 +1,127 @@
+import * as vscode from 'vscode';
+import { SqlNotebookController } from './controller';
+
+export class ControllerManager {
+  private controllers: Map<string, SqlNotebookController> = new Map();
+  private activeNotebookControllers: Map<string, SqlNotebookController> = new Map();
+  private messaging = vscode.notebooks.createRendererMessaging('sqlnb-table-renderer');
+  private disposables: vscode.Disposable[] = [];
+
+  constructor(private updateStatusBar: (ctrl: SqlNotebookController | undefined) => void) {
+    this.disposables.push(this.messaging.onDidReceiveMessage((e) => {
+      const { cellUriStr, column, direction } = e.message;
+      if (cellUriStr && column && direction) {
+        let targetCell: vscode.NotebookCell | undefined;
+        let targetNotebook: vscode.NotebookDocument | undefined;
+        for (const editor of vscode.window.visibleNotebookEditors) {
+          for (const cell of editor.notebook.getCells()) {
+            if (cell.document.uri.toString() === cellUriStr) {
+              targetCell = cell;
+              targetNotebook = editor.notebook;
+              break;
+            }
+          }
+          if (targetCell) break;
+        }
+
+        if (targetNotebook && targetCell) {
+          const ctrl = this.activeNotebookControllers.get(targetNotebook.uri.toString());
+          if (ctrl) {
+            ctrl.executeWithSort(targetCell, column, direction);
+          }
+        }
+      }
+    }));
+
+    this.disposables.push(vscode.workspace.onDidChangeConfiguration(e => {
+       if (e.affectsConfiguration('sqlNotebook.connections')) {
+          this.refreshControllers();
+       }
+    }));
+    
+    this.disposables.push(vscode.window.onDidChangeActiveNotebookEditor(editor => {
+       if (editor) {
+          const ctrl = this.activeNotebookControllers.get(editor.notebook.uri.toString());
+          this.updateStatusBar(ctrl);
+       } else {
+          this.updateStatusBar(undefined);
+       }
+    }));
+  }
+
+  async refreshControllers() {
+     for (const ctrl of this.controllers.values()) {
+        ctrl.dispose();
+     }
+     this.controllers.clear();
+
+     const config = vscode.workspace.getConfiguration('sqlNotebook');
+     const savedMap = config.get<Record<string, string>>('connections') || {};
+
+     for (const [name, url] of Object.entries(savedMap)) {
+        const id = `sqlnb-conn-${Buffer.from(name).toString('base64').replace(/=/g, '')}`;
+        this.createController(id, `$(database) ${name}`, url);
+     }
+
+     if (vscode.workspace.workspaceFolders) {
+        for (const folder of vscode.workspace.workspaceFolders) {
+          try {
+            const envUri = vscode.Uri.joinPath(folder.uri, '.env');
+            const data = await vscode.workspace.fs.readFile(envUri);
+            const content = Buffer.from(data).toString('utf-8');
+            for (const line of content.split('\n')) {
+              const trimmed = line.trim();
+              if (trimmed.startsWith('#')) continue;
+              const eqIdx = trimmed.indexOf('=');
+              if (eqIdx > 0) {
+                const key = trimmed.substring(0, eqIdx).trim();
+                const val = trimmed.substring(eqIdx + 1).trim().replace(/^['"]|['"]$/g, '');
+                if (val.startsWith('postgres://') || val.startsWith('postgresql://')) {
+                  const id = `sqlnb-env-${Buffer.from(key).toString('base64').replace(/=/g, '')}`;
+                  this.createController(id, `$(file) ${key} (.env)`, val);
+                }
+              }
+            }
+          } catch (e) {}
+        }
+     }
+
+     if (this.controllers.size === 0) {
+        this.createController('sqlnb-default', 'SQL Notebook (No Connection)', null);
+     }
+  }
+
+  private createController(id: string, label: string, url: string | null) {
+     if (this.controllers.has(id)) return;
+     const ctrl = new SqlNotebookController(id, label, url, (c, nb) => {
+        this.activeNotebookControllers.set(nb.uri.toString(), c);
+        this.updateStatusBar(c);
+     });
+     this.controllers.set(id, ctrl);
+  }
+
+  getActiveControllerForNotebook(nb: vscode.NotebookDocument): SqlNotebookController | undefined {
+     return this.activeNotebookControllers.get(nb.uri.toString());
+  }
+
+  getActiveController(): SqlNotebookController | undefined {
+     const editor = vscode.window.activeNotebookEditor;
+     if (!editor) return undefined;
+     return this.activeNotebookControllers.get(editor.notebook.uri.toString());
+  }
+
+  disconnectAll() {
+     for (const ctrl of this.controllers.values()) {
+        ctrl.disconnect();
+     }
+  }
+
+  dispose() {
+     for (const ctrl of this.controllers.values()) {
+        ctrl.dispose();
+     }
+     for (const d of this.disposables) {
+        d.dispose();
+     }
+  }
+}

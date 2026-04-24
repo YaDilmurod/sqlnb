@@ -4,9 +4,7 @@ import { generateStandaloneChart, StoredResult } from './chart-engine';
 import { trackQueryRun, getTelemetryContext } from './telemetry';
 
 export class SqlNotebookController {
-  private readonly _id = 'sql-notebook-controller';
   private readonly _notebookType = 'sql-notebook';
-  private readonly _label = 'SQL Notebook';
   private readonly _supportedLanguages = ['sql', 'chart'];
 
   private _controller: vscode.NotebookController;
@@ -16,62 +14,53 @@ export class SqlNotebookController {
   private _dfCounter = 0;
   private _activeQueries: Map<string, number> = new Map();
 
-  private _messaging = vscode.notebooks.createRendererMessaging('sqlnb-table-renderer');
-
-  constructor() {
+  constructor(
+    public readonly id: string,
+    public readonly label: string,
+    public connectionString: string | null,
+    private readonly onControllerSelected: (controller: SqlNotebookController, notebook: vscode.NotebookDocument) => void
+  ) {
     this._controller = vscode.notebooks.createNotebookController(
-      this._id,
+      id,
       this._notebookType,
-      this._label
+      label
     );
 
     this._controller.supportedLanguages = this._supportedLanguages;
     this._controller.supportsExecutionOrder = true;
     this._controller.executeHandler = this._execute.bind(this);
     this._controller.interruptHandler = this._interrupt.bind(this);
-    this._controller.detail = 'Not connected';
-
-    this._messaging.onDidReceiveMessage((e) => {
-      const { cellUriStr, column, direction } = e.message;
-      if (cellUriStr && column && direction) {
-        this.executeWithSort(cellUriStr, column, direction);
+    
+    if (connectionString) {
+      try {
+         const url = new URL(connectionString);
+         this._controller.detail = `${url.pathname.slice(1)}@${url.hostname}`;
+      } catch {
+         this._controller.detail = 'Database Connection';
       }
-    });
+    } else {
+      this._controller.detail = 'No connection string configured';
+    }
   }
-
-  // ─── Connection Management ──────────────────────────────────────
 
   get isConnected(): boolean {
     return this._pool !== null;
   }
 
-  async connect(connectionString: string): Promise<{ success: boolean; error?: string }> {
+  async connect(connStr: string): Promise<{ success: boolean; error?: string }> {
     try {
       if (this._pool) {
         await this._pool.end();
       }
+      this.connectionString = connStr;
+      this._pool = new Pool({ connectionString: connStr });
 
-      this._pool = new Pool({ connectionString });
-
-      // Test the connection
       const client = await this._pool.connect();
       client.release();
-
-      // Show connection info in kernel picker label
-      try {
-        const url = new URL(connectionString);
-        this._controller.label = `${url.pathname.slice(1)}@${url.hostname}`;
-        this._controller.detail = 'SQL Notebook Connected';
-      } catch {
-        this._controller.label = 'Database Connected';
-        this._controller.detail = 'SQL Notebook Connected';
-      }
 
       return { success: true };
     } catch (err: any) {
       this._pool = null;
-      this._controller.label = this._label;
-      this._controller.detail = 'Not connected';
       return { success: false, error: err.message };
     }
   }
@@ -81,40 +70,44 @@ export class SqlNotebookController {
       await this._pool.end();
       this._pool = null;
     }
-    this._controller.detail = 'Not connected';
   }
 
   getLastResult(): Record<string, any>[] {
     return this._lastResult;
   }
 
-  // ─── Execution ──────────────────────────────────────────────────
-
-  public async executeWithSort(cellUriStr: string, column: string, direction: 'ASC' | 'DESC') {
-    let targetCell: vscode.NotebookCell | undefined;
-    
-    // Find the cell across all open notebooks
-    for (const editor of vscode.window.visibleNotebookEditors) {
-      for (const cell of editor.notebook.getCells()) {
-        if (cell.document.uri.toString() === cellUriStr) {
-          targetCell = cell;
-          break;
-        }
-      }
-      if (targetCell) break;
-    }
-
-    if (!targetCell) return;
-
-    // Execute with sort wrapper
-    await this._executeCell(targetCell, { column, direction });
+  public async executeWithSort(cell: vscode.NotebookCell, column: string, direction: 'ASC' | 'DESC') {
+    await this._executeCell(cell, { column, direction });
   }
 
   private async _execute(
     cells: vscode.NotebookCell[],
-    _notebook: vscode.NotebookDocument,
+    notebook: vscode.NotebookDocument,
     _controller: vscode.NotebookController
   ): Promise<void> {
+    this.onControllerSelected(this, notebook);
+
+    // Auto connect if needed
+    if (!this._pool && this.connectionString) {
+      const res = await this.connect(this.connectionString);
+      if (!res.success) {
+        for (const cell of cells) {
+          const execution = this._controller.createNotebookCellExecution(cell);
+          execution.start(Date.now());
+          execution.replaceOutput([
+             new vscode.NotebookCellOutput([
+               vscode.NotebookCellOutputItem.text(
+                 this._renderError(`Connection failed:\n${res.error}`),
+                 'text/html'
+               ),
+             ]),
+          ]);
+          execution.end(false, Date.now());
+        }
+        return;
+      }
+    }
+
     for (const cell of cells) {
       await this._executeCell(cell);
     }
@@ -122,8 +115,6 @@ export class SqlNotebookController {
 
   private async _interrupt(notebook: vscode.NotebookDocument): Promise<void> {
     if (!this._pool) return;
-    
-    // Find all cells in this notebook that have active queries and cancel them
     for (const cell of notebook.getCells()) {
       const pid = this._activeQueries.get(cell.document.uri.toString());
       if (pid) {
@@ -143,7 +134,6 @@ export class SqlNotebookController {
     execution.executionOrder = Date.now();
     execution.start(Date.now());
 
-    // ── Chart cell: render standalone chart from stored results ──
     if (cell.document.languageId === 'chart') {
       const results = Array.from(this._resultStore.values());
       const vizId = 'sqlnb_' + Date.now().toString(36) + '_' + Math.random().toString(36).slice(2, 7);
@@ -157,25 +147,16 @@ export class SqlNotebookController {
       return;
     }
 
-    // ── SQL cell ──
     let query = cell.document.getText().trim();
-
     if (!query) {
-      execution.replaceOutput([
-        new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.text('Empty query — nothing to execute.', 'text/plain'),
-        ]),
-      ]);
+      execution.replaceOutput([new vscode.NotebookCellOutput([vscode.NotebookCellOutputItem.text('Empty query — nothing to execute.', 'text/plain')])]);
       execution.end(true, Date.now());
       return;
     }
 
-    // Strip trailing semicolons to prevent syntax errors when wrapping in subqueries
     query = query.replace(/;+\s*$/, '');
-
     const cleanQuery = query.replace(/\/\*[\s\S]*?\*\//g, '').replace(/--.*$/gm, '').trim();
 
-    // Apply sort wrapper if triggered by a column header click
     if (sortOptions && /^(SELECT|WITH|VALUES|TABLE|\()/i.test(cleanQuery)) {
       query = `SELECT * FROM (\n${query}\n) AS _sqlnb_sort ORDER BY "${sortOptions.column}" ${sortOptions.direction}`;
     }
@@ -184,7 +165,7 @@ export class SqlNotebookController {
       execution.replaceOutput([
         new vscode.NotebookCellOutput([
           vscode.NotebookCellOutputItem.text(
-            this._renderError('Not connected to a database.\n\nUse Cmd+Shift+P → "SQL Notebook: Connect to Database"'),
+            this._renderError('Not connected to a database. Please select a valid connection from the Kernel Picker (top right) or add a new one.'),
             'text/html'
           ),
         ]),
@@ -197,10 +178,7 @@ export class SqlNotebookController {
 
     try {
       const startTime = performance.now();
-
-      // Detect SELECT-like queries that return row sets, ignoring SQL comments
       const isSelect = /^(SELECT|WITH|VALUES|TABLE|\()/i.test(cleanQuery);
-
       let rows: Record<string, any>[] = [];
       let fields: any[] = [];
       let command = '';
@@ -212,22 +190,17 @@ export class SqlNotebookController {
       const client = await this._pool!.connect();
       
       try {
-        // Register PID for cancellation
         const pidRes = await client.query('SELECT pg_backend_pid()');
         this._activeQueries.set(cellUriStr, pidRes.rows[0].pg_backend_pid);
 
         if (isSelect) {
-          // Get a smart estimate of total rows instantly (like DBeaver)
           try {
             const explainRes = await client.query(`EXPLAIN (FORMAT JSON) ${query}`);
             if (explainRes.rows && explainRes.rows[0] && explainRes.rows[0]['QUERY PLAN']) {
               totalEstimatedRows = explainRes.rows[0]['QUERY PLAN'][0].Plan['Plan Rows'];
             }
-          } catch (e) {
-            // Ignore if query cannot be EXPLAINed
-          }
+          } catch (e) {}
 
-          // ── Cursor-based fetching (DBeaver-style) ──────────────────
           await client.query('BEGIN');
           await client.query(`DECLARE _sqlnb_cursor NO SCROLL CURSOR FOR ${query}`);
           const result = await client.query(`FETCH ${maxRows + 1} FROM _sqlnb_cursor`);
@@ -244,7 +217,6 @@ export class SqlNotebookController {
           }
           rowCount = rows.length;
         } else {
-          // Non-SELECT (DDL/DML): run directly via the client
           const result = await client.query(query);
           rows = result.rows || [];
           fields = result.fields || [];
@@ -253,9 +225,8 @@ export class SqlNotebookController {
         }
       } catch (err: any) {
         if (isSelect) {
-          try { await client.query('ROLLBACK'); } catch { /* ignore rollback errors */ }
+          try { await client.query('ROLLBACK'); } catch { }
         }
-        // Handle cancellation beautifully
         if (err.message && err.message.includes('canceling statement due to user request')) {
            execution.replaceOutput([
              new vscode.NotebookCellOutput([
@@ -272,8 +243,6 @@ export class SqlNotebookController {
       }
 
       const elapsed = performance.now() - startTime;
-
-      // Store for CSV export
       this._lastResult = rows;
 
       if (rows.length > 0) {
@@ -284,7 +253,6 @@ export class SqlNotebookController {
           rows, fields, elapsedMs: elapsed, fetchedCount: rows.length, hasMore, maxRows, cellUriStr: cellKey, currentSort: sortOptions, totalEstimatedRows
         };
 
-        // Store result for chart cells to reference
         this._dfCounter++;
         const label = 'df_' + this._dfCounter;
         this._resultStore.set(cellKey, { key: cellKey, label, rows, columns: headers });
@@ -308,25 +276,15 @@ export class SqlNotebookController {
     } catch (err: any) {
       execution.replaceOutput([
         new vscode.NotebookCellOutput([
-          vscode.NotebookCellOutputItem.text(
-            this._renderError(err.message),
-            'text/html'
-          ),
+          vscode.NotebookCellOutputItem.text(this._renderError(err.message), 'text/html'),
         ]),
       ]);
       execution.end(false, Date.now());
     }
   }
 
-  // ─── HTML Renderers ─────────────────────────────────────────────
-
-
-
   private _renderSuccess(command: string, rowCount: number, elapsedMs: number): string {
-    const elapsed = elapsedMs < 1000
-      ? `${elapsedMs.toFixed(1)}ms`
-      : `${(elapsedMs / 1000).toFixed(2)}s`;
-
+    const elapsed = elapsedMs < 1000 ? `${elapsedMs.toFixed(1)}ms` : `${(elapsedMs / 1000).toFixed(2)}s`;
     return `
       <div style="font-family:system-ui;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;color:#166534;font-size:13px;">
         <strong>✓ ${this._escapeHtml(command)}</strong> completed
@@ -344,43 +302,8 @@ export class SqlNotebookController {
     `;
   }
 
-  // ─── Utilities ──────────────────────────────────────────────────
-
   private _escapeHtml(str: string): string {
-    return str
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
-  }
-
-  /**
-   * Map common PostgreSQL OIDs to human-readable type names.
-   * This is not exhaustive but covers the most common types a data analyst will see.
-   */
-  private _oidToType(oid: number): string {
-    const map: Record<number, string> = {
-      16: 'bool',
-      20: 'int8',
-      21: 'int2',
-      23: 'int4',
-      25: 'text',
-      700: 'float4',
-      701: 'float8',
-      1043: 'varchar',
-      1082: 'date',
-      1114: 'timestamp',
-      1184: 'timestamptz',
-      1700: 'numeric',
-      2950: 'uuid',
-      3802: 'jsonb',
-      114: 'json',
-      1009: 'text[]',
-      1015: 'varchar[]',
-      1016: 'int8[]',
-      1007: 'int4[]',
-    };
-    return map[oid] || `oid:${oid}`;
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
   }
 
   dispose() {
