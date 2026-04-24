@@ -35,7 +35,7 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
       // If the file is empty or invalid JSON, create a default notebook
       raw = {
         cells: [
-          { type: 'markdown', content: '# SQL Notebook\nConnect with `Cmd+Shift+P` → **SQL Notebook: Connect to Database**' },
+          { type: 'markdown', content: '# SQL Notebook\nConnect with `Cmd+Shift+P` (Mac) or `Ctrl+Shift+P` (Windows/Linux) → **SQL Notebook: Connect to Database**' },
           { type: 'sql', content: 'SELECT 1;' },
         ],
       };

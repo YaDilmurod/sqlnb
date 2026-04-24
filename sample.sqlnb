@@ -2,7 +2,7 @@
   "cells": [
     {
       "type": "markdown",
-      "content": "# My First SQL Notebook\n\n## Getting Started\n1. Press `Cmd+Shift+P` and run **SQL Notebook: Connect to Database**\n2. Paste your connection string (e.g. `postgresql://postgres:password@localhost:5432/mydb`)\n3. Click the ▶ play button on any SQL cell below to execute it\n\n---"
+      "content": "# My First SQL Notebook\n\n## Getting Started\n1. Press `Cmd+Shift+P` (Mac) or `Ctrl+Shift+P` (Windows/Linux) and run **SQL Notebook: Connect to Database**\n2. Paste your connection string (e.g. `postgresql://postgres:password@localhost:5432/mydb`)\n3. Click the ▶ play button on any SQL cell below to execute it\n\n---"
     },
     {
       "type": "sql",
