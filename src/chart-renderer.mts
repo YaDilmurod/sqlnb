@@ -107,6 +107,9 @@ export function activate(ctx: any) {
                     <option value="max">Max</option>
                   </select>
                 </label>
+                <button id="${vizId}-run" style="margin-top:4px; margin-bottom:4px; padding:8px 12px; background:#4f46e5; color:white; border:none; border-radius:4px; cursor:pointer; font-weight:600; width:100%; box-shadow: 0 1px 2px rgba(0,0,0,0.05); transition: background 0.15s ease;">
+                  ▶ Run Chart
+                </button>
                 <div style="height:1px; background:#e0e0e0; margin:4px 0;"></div>
                 <label style="${ls}">Sort By
                   <select id="${vizId}-sort-by" style="${ss}">
@@ -166,83 +169,46 @@ export function activate(ctx: any) {
                 el.innerHTML = html;
             }
 
-            function detectTypes(columns: string[], sampleRows: any[]) {
-                const types: Record<string, { numeric: boolean; date: boolean; uniqueCount: number }> = {};
-                columns.forEach((col: string) => {
-                    let nums = 0, dates = 0, total = 0;
-                    const uniq: Record<string, number> = {};
-                    sampleRows.forEach((r: any) => {
-                        const v = r[col];
-                        if (v === null || v === undefined) return;
-                        total++;
-                        if (typeof v === 'number' || (typeof v === 'string' && v !== '' && !isNaN(Number(v)))) nums++;
-                        if (typeof v === 'string' && !isNaN(Date.parse(v)) && v.length > 4) dates++;
-                        uniq[String(v)] = 1;
-                    });
-                    types[col] = {
-                        numeric: total > 0 && nums / total > 0.8,
-                        date: total > 0 && dates / total > 0.8,
-                        uniqueCount: Object.keys(uniq).length
-                    };
-                });
-                return types;
-            }
-
-            function setDefaults(columns: string[], types: any) {
-                let xCol = columns[0], yCol = columns[Math.min(1, columns.length - 1)];
-                let chartType = 'bar';
-
-                for (let i = 0; i < columns.length; i++) {
-                    const t = types[columns[i]];
-                    if (t.date) { xCol = columns[i]; chartType = 'line'; break; }
-                    if (!t.numeric && t.uniqueCount <= 30) { xCol = columns[i]; break; }
-                }
-                for (let i = 0; i < columns.length; i++) {
-                    if (types[columns[i]].numeric && columns[i] !== xCol) { yCol = columns[i]; break; }
-                }
-
-                const typeEl = $('type');
-                const xEl = $('x');
-                const yEl = $('y');
-                const sortByEl = $('sort-by');
-                const sortDirEl = $('sort-dir');
-
-                if (typeEl) typeEl.value = chartType;
-                if (xEl) xEl.value = xCol;
-                if (yEl) yEl.value = yCol;
-
-                if (chartType === 'line') {
-                    if (sortByEl) sortByEl.value = 'x';
-                    if (sortDirEl) sortDirEl.value = 'asc';
-                } else {
-                    if (sortByEl) sortByEl.value = 'y';
-                    if (sortDirEl) sortDirEl.value = 'desc';
-                }
-            }
-
             function initDataset() {
                 currentDatasetIdx = parseInt($('ds')?.value || '0') || 0;
                 const ds = DATASETS[currentDatasetIdx];
-                populateSelect('x', ds.columns, false);
-                populateSelect('y', ds.columns, false);
+                populateSelect('x', ds.columns, true);
+                populateSelect('y', ds.columns, true);
                 populateSelect('color', ds.columns, true);
-                const types = detectTypes(ds.columns, ds.sampleRows);
-                setDefaults(ds.columns, types);
+                
+                const typeEl = $('type');
+                const xEl = $('x');
+                const yEl = $('y');
+                
+                if (typeEl) typeEl.value = 'bar';
+                if (xEl) xEl.value = '';
+                if (yEl) yEl.value = '';
+
                 lastAggRows = null;
-                requestAggregation();
+                if (myChart) myChart.clear();
+                
+                const statusEl = $('status');
+                if (statusEl) statusEl.innerHTML = '<span style="color:#666;">Select X and Y axis, then click Run Chart.</span>';
+                hideLoading();
             }
 
             function requestAggregation() {
-                const ds = DATASETS[currentDatasetIdx];
                 const xCol = $('x')?.value || '';
                 const yCol = $('y')?.value || '';
+                
+                const statusEl = $('status');
+                if (!xCol || !yCol) {
+                    if (statusEl) statusEl.innerHTML = '<span style="color:#d97706;">⚠️ Please select both X and Y axis.</span>';
+                    return;
+                }
+
+                const ds = DATASETS[currentDatasetIdx];
                 const colorCol = $('color')?.value || '';
                 const aggFn = $('agg')?.value || 'sum';
 
                 pendingRequestId++;
                 const requestId = pendingRequestId;
 
-                const statusEl = $('status');
                 if (statusEl) statusEl.innerHTML = '<span style="color:#4f46e5;">⏳ Querying database...</span>';
                 showLoading('Aggregating data on server...');
 
@@ -480,11 +446,13 @@ export function activate(ctx: any) {
             const dsEl = $('ds');
             if (dsEl) dsEl.addEventListener('change', () => { initDataset(); });
 
-            // X, Y, Color, Agg changes → need a new server query
-            ['x', 'y', 'color', 'agg'].forEach((id: string) => {
-                const el = $(id);
-                if (el) el.addEventListener('change', () => { requestAggregation(); });
-            });
+            // Run chart explicitly
+            const runBtn = $('run');
+            if (runBtn) {
+                runBtn.addEventListener('click', () => { requestAggregation(); });
+                runBtn.addEventListener('mouseover', () => { runBtn.style.background = '#4338ca'; });
+                runBtn.addEventListener('mouseout', () => { runBtn.style.background = '#4f46e5'; });
+            }
 
             // Chart type, Sort By, Sort Direction → client-side only, re-render from cache
             ['type', 'sort-by', 'sort-dir'].forEach((id: string) => {

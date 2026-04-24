@@ -1,6 +1,13 @@
 # Change Log
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
+## [0.0.52]
+- **UX:** Added a dedicated **Run Chart** button to prevent unnecessary database queries while configuring chart options.
+- **UX:** Removed auto-preselection of X and Y axes, giving users a clean slate to build their charts.
+- **Reliability:** Hardened chart aggregation against mixed-type columns. Postgres now uses a regex-based safe cast, and DuckDB uses `TRY_CAST`, preventing "Conversion Error" failures when querying messy data.
+- **Reliability:** Added safe serialization for BLOB/binary data (`Buffer` in Postgres, `Uint8Array` in DuckDB) to prevent massive JSON payloads from freezing the VS Code UI.
+- **Reliability:** Improved DuckDB CSV type detection by forcing full-file scans (`sample_size=-1`), eliminating schema-on-read mismatch errors during sorts and aggregations.
+
 
 ## [0.0.51]
 - **Feature:** DuckDB Integration! Users can now query local `.csv` and `.xlsx` files directly using SQL — no PostgreSQL server required. Select the **Local Files (DuckDB)** kernel from the top-right picker and run `SELECT * FROM 'data/sales.csv';`.

@@ -60,7 +60,8 @@ export function buildAggregationQuery(
   xCol: string,
   yCol: string,
   aggFn: string,
-  colorCol?: string
+  colorCol?: string,
+  driverType: 'postgres' | 'duckdb' = 'postgres'
 ): string {
   // Strip trailing semicolons from original query
   const cleanOriginal = originalQuery.replace(/;+\s*$/, '');
@@ -73,16 +74,20 @@ export function buildAggregationQuery(
   const quotedGroupCols = groupCols.map(c => `"${c}"`);
   const groupByClause = quotedGroupCols.join(', ');
 
+  // Postgres does not have TRY_CAST, so we emulate it with a regex that checks for valid numbers.
+  const yCastPg = `CASE WHEN "${yCol}"::text ~ '^[-+]?[0-9]*\\.?([0-9]+)?([eE][-+]?[0-9]+)?$' AND "${yCol}"::text != '' AND "${yCol}"::text != '.' THEN "${yCol}"::numeric ELSE NULL END`;
+  const yCast = driverType === 'duckdb' ? `TRY_CAST("${yCol}" AS numeric)` : yCastPg;
+
   let yExpression: string;
   switch (aggFn) {
     case 'count':
       yExpression = `COUNT(*) AS "_sqlnb_agg_value"`;
       break;
     case 'sum':
-      yExpression = `COALESCE(SUM("${yCol}"::numeric), 0) AS "_sqlnb_agg_value"`;
+      yExpression = `COALESCE(SUM(${yCast}), 0) AS "_sqlnb_agg_value"`;
       break;
     case 'avg':
-      yExpression = `COALESCE(AVG("${yCol}"::numeric), 0) AS "_sqlnb_agg_value"`;
+      yExpression = `COALESCE(AVG(${yCast}), 0) AS "_sqlnb_agg_value"`;
       break;
     case 'min':
       yExpression = `MIN("${yCol}") AS "_sqlnb_agg_value"`;

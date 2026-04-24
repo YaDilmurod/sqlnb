@@ -116,7 +116,7 @@ export class SqlNotebookController {
       }
     }
 
-    const aggQuery = buildAggregationQuery(stored.query, xCol, yCol, aggFn, colorCol || undefined);
+    const aggQuery = buildAggregationQuery(stored.query, xCol, yCol, aggFn, colorCol || undefined, this.driverType);
     
     const startTime = performance.now();
     try {

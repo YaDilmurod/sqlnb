@@ -1,12 +1,25 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 import { IDatabaseDriver, QueryResult } from './types';
 
-// Use require for duckdb-async since it's a CommonJS module
-let Database: any;
-try {
-  Database = require('duckdb-async').Database;
-} catch {
-  // DuckDB not available — will fail gracefully at connect time
+/**
+ * DuckDB returns BigInt for integer columns, which JSON.stringify cannot handle.
+ * This helper converts BigInt values to Number (or string if > MAX_SAFE_INTEGER).
+ */
+function sanitizeRows(rows: Record<string, any>[]): Record<string, any>[] {
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      const val = row[key];
+      if (typeof val === 'bigint') {
+        row[key] = (val <= BigInt(Number.MAX_SAFE_INTEGER) && val >= BigInt(-Number.MAX_SAFE_INTEGER))
+          ? Number(val)
+          : String(val);
+      } else if (val instanceof Uint8Array) {
+        row[key] = '[BLOB - ' + val.length + ' bytes]';
+      }
+    }
+  }
+  return rows;
 }
 
 export class DuckDbDriver implements IDatabaseDriver {
@@ -17,10 +30,45 @@ export class DuckDbDriver implements IDatabaseDriver {
     return this._db !== null;
   }
 
-  async connect(_connectionString?: string): Promise<void> {
-    if (!Database) {
-      throw new Error('DuckDB module is not available. Please reinstall the extension.');
+  /**
+   * Rewrite bare CSV file references like FROM 'file.csv' to use
+   * read_csv_auto('file.csv', sample_size=-1) so DuckDB scans the
+   * entire file for type detection. This prevents type mismatch errors
+   * when the same CSV is re-read during sorting or chart aggregation.
+   */
+  private _rewriteCsvPaths(query: string): string {
+    return query.replace(
+      /\bFROM\s+'([^']+\.csv)'/gi,
+      "FROM read_csv_auto('$1', sample_size=-1)"
+    );
+  }
+
+  /**
+   * Dynamically load duckdb-async at connect time (not module load time).
+   * This ensures the require() resolves relative to the extension root,
+   * which is critical when running inside VS Code's extension host.
+   */
+  private _loadDuckDb(): any {
+    // Resolve the extension's own node_modules path
+    const extensionRoot = path.resolve(__dirname, '..', '..');
+    const modulePath = path.join(extensionRoot, 'node_modules', 'duckdb-async');
+    try {
+      return require(modulePath).Database;
+    } catch (err: any) {
+      // Fallback: try standard require
+      try {
+        return require('duckdb-async').Database;
+      } catch {
+        throw new Error(
+          `Failed to load DuckDB native module: ${err.message}. ` +
+          `Ensure 'duckdb' and 'duckdb-async' are installed in the extension's node_modules.`
+        );
+      }
     }
+  }
+
+  async connect(_connectionString?: string): Promise<void> {
+    const Database = this._loadDuckDb();
 
     // Create an in-memory DuckDB instance
     this._db = await Database.create(':memory:');
@@ -50,10 +98,12 @@ export class DuckDbDriver implements IDatabaseDriver {
 
   async executeSelect(query: string, maxRows: number): Promise<QueryResult> {
     if (!this._db) throw new Error('DuckDB not connected');
+    query = this._rewriteCsvPaths(query);
 
     // DuckDB doesn't have cursors like Postgres — use LIMIT for memory safety
     const limitedQuery = `SELECT * FROM (\n${query}\n) AS _sqlnb_limited LIMIT ${maxRows + 1}`;
-    const rows: Record<string, any>[] = await this._db.all(limitedQuery);
+    const rawRows: Record<string, any>[] = await this._db.all(limitedQuery);
+    const rows = sanitizeRows(rawRows);
 
     let hasMore = false;
     let resultRows = rows;
@@ -78,8 +128,9 @@ export class DuckDbDriver implements IDatabaseDriver {
 
   async executeStatement(query: string): Promise<QueryResult> {
     if (!this._db) throw new Error('DuckDB not connected');
+    query = this._rewriteCsvPaths(query);
     const result = await this._db.all(query);
-    const rows = result || [];
+    const rows = sanitizeRows(result || []);
 
     const fields = rows.length > 0
       ? Object.keys(rows[0]).map((name: string) => ({ name }))
@@ -95,19 +146,14 @@ export class DuckDbDriver implements IDatabaseDriver {
   }
 
   async getEstimatedRows(query: string): Promise<number | undefined> {
-    // DuckDB doesn't support EXPLAIN (FORMAT JSON) in the same way.
-    // We'll skip estimation for now.
     return undefined;
   }
 
   async cancelQuery(_pid?: number): Promise<void> {
-    // DuckDB doesn't support external query cancellation easily.
-    // The interrupt would need to happen at the C++ level.
-    // For now, this is a no-op.
+    // DuckDB doesn't support external query cancellation easily — no-op.
   }
 
   async getBackendPid(): Promise<number | undefined> {
-    // Not applicable for DuckDB
     return undefined;
   }
 
@@ -116,7 +162,8 @@ export class DuckDbDriver implements IDatabaseDriver {
    */
   async executeRaw(query: string): Promise<{ rows: Record<string, any>[] }> {
     if (!this._db) throw new Error('DuckDB not connected');
+    query = this._rewriteCsvPaths(query);
     const rows = await this._db.all(query);
-    return { rows: rows || [] };
+    return { rows: sanitizeRows(rows || []) };
   }
 }

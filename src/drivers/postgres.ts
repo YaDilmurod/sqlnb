@@ -1,6 +1,22 @@
 import { Pool, PoolClient } from 'pg';
 import { IDatabaseDriver, QueryResult } from './types';
 
+/**
+ * Postgres driver returns BLOBs as Buffer objects, which JSON.stringify
+ * turns into massive JSON arrays. This helper gracefully formats them.
+ */
+function sanitizeRows(rows: Record<string, any>[]): Record<string, any>[] {
+  for (const row of rows) {
+    for (const key of Object.keys(row)) {
+      const val = row[key];
+      if (Buffer.isBuffer(val)) {
+        row[key] = '[BLOB - ' + val.length + ' bytes]';
+      }
+    }
+  }
+  return rows;
+}
+
 export class PostgresDriver implements IDatabaseDriver {
   readonly type = 'postgres' as const;
   private _pool: Pool | null = null;
@@ -49,7 +65,7 @@ export class PostgresDriver implements IDatabaseDriver {
       }
 
       return {
-        rows,
+        rows: sanitizeRows(rows),
         fields: (result.fields || []).map((f: any) => ({ name: f.name, dataTypeID: f.dataTypeID })),
         rowCount: rows.length,
         command: 'SELECT',
@@ -69,7 +85,7 @@ export class PostgresDriver implements IDatabaseDriver {
     try {
       const result = await client.query(query);
       return {
-        rows: result.rows || [],
+        rows: sanitizeRows(result.rows || []),
         fields: (result.fields || []).map((f: any) => ({ name: f.name, dataTypeID: f.dataTypeID })),
         rowCount: result.rowCount ?? 0,
         command: result.command || '',
@@ -125,7 +141,7 @@ export class PostgresDriver implements IDatabaseDriver {
     const client = await this._pool.connect();
     try {
       const result = await client.query(query);
-      return { rows: result.rows || [] };
+      return { rows: sanitizeRows(result.rows || []) };
     } finally {
       client.release();
     }

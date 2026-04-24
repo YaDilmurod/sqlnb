@@ -3,7 +3,7 @@
     "displayName": "SQL Notebook EDA",
     "description": "A lightweight Jupyter-style SQL notebook for PostgreSQL — built for data analysts",
     "icon": "images/icon.png",
-    "version": "0.0.51",
+    "version": "0.0.52",
     "publisher": "SQLNB",
     "engines": {
         "vscode": "^1.80.0"
