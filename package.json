@@ -3,7 +3,7 @@
     "displayName": "SQL Notebook EDA",
     "description": "A lightweight Jupyter-style SQL notebook for PostgreSQL — built for data analysts",
     "icon": "images/icon.png",
-    "version": "0.0.54",
+    "version": "0.0.55",
     "publisher": "SQLNB",
     "engines": {
         "vscode": "^1.80.0"
@@ -36,6 +36,15 @@
                     "application/vnd.sqlnb.chart"
                 ],
                 "requiresMessaging": "optional"
+            },
+            {
+                "id": "sqlnb-summary-renderer",
+                "displayName": "SQL Notebook Summary Renderer",
+                "entrypoint": "./out/summary-renderer.mjs",
+                "mimeTypes": [
+                    "application/vnd.sqlnb.summary"
+                ],
+                "requiresMessaging": "optional"
             }
         ],
         "languages": [
@@ -43,6 +52,12 @@
                 "id": "chart",
                 "aliases": [
                     "Chart"
+                ]
+            },
+            {
+                "id": "summary",
+                "aliases": [
+                    "Summary"
                 ]
             }
         ],
@@ -84,6 +99,11 @@
                 "icon": "$(graph)"
             },
             {
+                "command": "sqlNotebook.addSummary",
+                "title": "SQL Notebook: Add Summary Cell",
+                "icon": "$(list-flat)"
+            },
+            {
                 "command": "sqlNotebook.sortData",
                 "title": "SQL Notebook: Sort Table Server-Side"
             }
@@ -92,6 +112,11 @@
             "notebook/toolbar": [
                 {
                     "command": "sqlNotebook.addChart",
+                    "group": "navigation",
+                    "when": "notebookType == 'sql-notebook'"
+                },
+                {
+                    "command": "sqlNotebook.addSummary",
                     "group": "navigation",
                     "when": "notebookType == 'sql-notebook'"
                 }

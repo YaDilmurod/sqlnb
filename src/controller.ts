@@ -3,13 +3,14 @@ import { IDatabaseDriver } from './drivers/types';
 import { PostgresDriver } from './drivers/postgres';
 import { DuckDbDriver } from './drivers/duckdb';
 import { StoredResult, buildChartPayload, buildAggregationQuery } from './chart-engine';
+import { buildSummaryPayload, buildSummaryQuery } from './summary-engine';
 import { trackQueryRun, getTelemetryContext } from './telemetry';
 
 export type DriverType = 'postgres' | 'duckdb';
 
 export class SqlNotebookController {
   private readonly _notebookType = 'sql-notebook';
-  private readonly _supportedLanguages = ['sql', 'chart'];
+  private readonly _supportedLanguages = ['sql', 'chart', 'summary'];
 
   private _controller: vscode.NotebookController;
   private _driver: IDatabaseDriver | null = null;
@@ -129,6 +130,35 @@ export class SqlNotebookController {
     }
   }
 
+  public async executeSummaryAggregation(
+    datasetKey: string,
+    columnTypes: Record<string, 'numeric'|'date'|'string'>
+  ): Promise<{ rows: Record<string, any>[]; elapsedMs: number; error?: string }> {
+    const stored = this._resultStore.get(datasetKey);
+    if (!stored) {
+      return { rows: [], elapsedMs: 0, error: 'Dataset not found. Please re-run the SQL cell.' };
+    }
+
+    if (!this._driver || !this._driver.isConnected()) {
+      const res = await this.connect();
+      if (!res.success) {
+        return { rows: [], elapsedMs: 0, error: `Connection failed: ${res.error}` };
+      }
+    }
+
+    const query = buildSummaryQuery(stored.query, columnTypes, this.driverType);
+    
+    const startTime = performance.now();
+    try {
+      const result = await (this._driver as any).executeRaw(query);
+      const elapsed = performance.now() - startTime;
+      return { rows: result.rows || [], elapsedMs: elapsed };
+    } catch (err: any) {
+      const elapsed = performance.now() - startTime;
+      return { rows: [], elapsedMs: elapsed, error: err.message };
+    }
+  }
+
   private async _execute(
     cells: vscode.NotebookCell[],
     notebook: vscode.NotebookDocument,
@@ -187,6 +217,19 @@ export class SqlNotebookController {
       execution.replaceOutput([
         new vscode.NotebookCellOutput([
           vscode.NotebookCellOutputItem.json(payload, 'application/vnd.sqlnb.chart'),
+        ]),
+      ]);
+      execution.end(true, Date.now());
+      return;
+    }
+
+    if (cell.document.languageId === 'summary') {
+      const results = Array.from(this._resultStore.values());
+      const payload = buildSummaryPayload(results, getTelemetryContext());
+      (payload as any).cellId = cell.document.uri.toString();
+      execution.replaceOutput([
+        new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(payload, 'application/vnd.sqlnb.summary'),
         ]),
       ]);
       execution.end(true, Date.now());

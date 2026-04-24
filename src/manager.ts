@@ -6,6 +6,7 @@ export class ControllerManager {
   private activeNotebookControllers: Map<string, SqlNotebookController> = new Map();
   private tableMessaging = vscode.notebooks.createRendererMessaging('sqlnb-table-renderer');
   private chartMessaging = vscode.notebooks.createRendererMessaging('sqlnb-chart-renderer');
+  private summaryMessaging = vscode.notebooks.createRendererMessaging('sqlnb-summary-renderer');
   private disposables: vscode.Disposable[] = [];
 
   constructor(private updateStatusBar: (ctrl: SqlNotebookController | undefined) => void) {
@@ -72,6 +73,50 @@ export class ControllerManager {
           requestId,
           rows: result.rows,
           elapsedMs: result.elapsedMs,
+          error: result.error
+        });
+      }
+    }));
+
+    // ── Summary renderer messaging (server-side data profiling) ──
+    this.disposables.push(this.summaryMessaging.onDidReceiveMessage(async (e) => {
+      const msg = e.message;
+      if (msg.type === 'summary-aggregate') {
+        const { requestId, datasetKey, columnTypes } = msg;
+
+        let ctrl: SqlNotebookController | undefined;
+        for (const c of this.controllers.values()) {
+          if (c.resultStore.has(datasetKey)) {
+            ctrl = c;
+            break;
+          }
+        }
+        if (!ctrl) {
+          ctrl = this.getActiveController();
+        }
+
+        if (!ctrl) {
+          this.summaryMessaging.postMessage({
+            type: 'summary-aggregate-result',
+            requestId,
+            rows: [],
+            elapsedMs: 0,
+            columnTypes,
+            error: 'No active database connection found. Please select a kernel and re-run your SQL cell.'
+          });
+          return;
+        }
+
+        const result = await ctrl.executeSummaryAggregation(
+          datasetKey, columnTypes
+        );
+
+        this.summaryMessaging.postMessage({
+          type: 'summary-aggregate-result',
+          requestId,
+          rows: result.rows,
+          elapsedMs: result.elapsedMs,
+          columnTypes,
           error: result.error
         });
       }

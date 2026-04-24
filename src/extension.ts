@@ -3,6 +3,7 @@ import { SqlNotebookSerializer } from './serializer';
 import { ControllerManager } from './manager';
 import { SqlNotebookController } from './controller';
 import { buildChartPayload } from './chart-engine';
+import { buildSummaryPayload } from './summary-engine';
 import {
   initTelemetry,
   trackActivation,
@@ -245,6 +246,40 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
       edit.set(editor.notebook.uri, [nbEdit]);
       await vscode.workspace.applyEdit(edit);
       trackChartAdded();
+    })
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('sqlNotebook.addSummary', async () => {
+      const editor = vscode.window.activeNotebookEditor;
+      if (!editor) {
+        vscode.window.showWarningMessage('Open a .sqlnb notebook first');
+        return;
+      }
+
+      const newCellIndex = editor.notebook.cellCount;
+      const cell = new vscode.NotebookCellData(
+        vscode.NotebookCellKind.Code,
+        '-- Data Profile Block',
+        'summary'
+      );
+      
+      cell.metadata = { inputCollapsed: true };
+
+      const ctrl = manager.getActiveController();
+      const results = ctrl ? Array.from(ctrl.resultStore.values()) : [];
+      const payload = buildSummaryPayload(results, getTelemetryContext());
+      
+      cell.outputs = [
+        new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(payload, 'application/vnd.sqlnb.summary'),
+        ])
+      ];
+
+      const edit = new vscode.WorkspaceEdit();
+      const nbEdit = vscode.NotebookEdit.insertCells(newCellIndex, [cell]);
+      edit.set(editor.notebook.uri, [nbEdit]);
+      await vscode.workspace.applyEdit(edit);
     })
   );
 
