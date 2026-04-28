@@ -45,6 +45,15 @@
                     "application/vnd.sqlnb.summary"
                 ],
                 "requiresMessaging": "optional"
+            },
+            {
+                "id": "sqlnb-schema-renderer",
+                "displayName": "SQL Notebook Schema Renderer",
+                "entrypoint": "./out/schema-renderer.mjs",
+                "mimeTypes": [
+                    "application/vnd.sqlnb.schema"
+                ],
+                "requiresMessaging": "optional"
             }
         ],
         "languages": [
@@ -58,6 +67,12 @@
                 "id": "summary",
                 "aliases": [
                     "Summary"
+                ]
+            },
+            {
+                "id": "schema",
+                "aliases": [
+                    "Schema"
                 ]
             }
         ],
@@ -83,7 +98,8 @@
             },
             {
                 "command": "sqlNotebook.showSchema",
-                "title": "SQL Notebook: Show Schema (Tables & Columns)"
+                "title": "SQL Notebook: Show Schema (Tables & Columns)",
+                "icon": "$(database)"
             },
             {
                 "command": "sqlNotebook.exportCsv",
@@ -117,6 +133,11 @@
                 },
                 {
                     "command": "sqlNotebook.addSummary",
+                    "group": "navigation",
+                    "when": "notebookType == 'sql-notebook'"
+                },
+                {
+                    "command": "sqlNotebook.showSchema",
                     "group": "navigation",
                     "when": "notebookType == 'sql-notebook'"
                 }

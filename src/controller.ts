@@ -4,13 +4,14 @@ import { PostgresDriver } from './drivers/postgres';
 import { DuckDbDriver } from './drivers/duckdb';
 import { StoredResult, buildChartPayload, buildAggregationQuery } from './chart-engine';
 import { buildSummaryPayload, buildSummaryQuery } from './summary-engine';
+import { buildSchemaQuery, parseSchemaRows, SchemaTable } from './schema-engine';
 import { trackQueryRun, getTelemetryContext } from './telemetry';
 
 export type DriverType = 'postgres' | 'duckdb';
 
 export class SqlNotebookController {
   private readonly _notebookType = 'sql-notebook';
-  private readonly _supportedLanguages = ['sql', 'chart', 'summary'];
+  private readonly _supportedLanguages = ['sql', 'chart', 'summary', 'schema'];
 
   private _controller: vscode.NotebookController;
   private _driver: IDatabaseDriver | null = null;
@@ -100,6 +101,27 @@ export class SqlNotebookController {
 
   public async executeWithoutSort(cell: vscode.NotebookCell) {
     await this._executeCell(cell);
+  }
+
+  public async executeSchemaQuery(): Promise<{ tables: SchemaTable[]; elapsedMs: number; error?: string }> {
+    if (!this._driver || !this._driver.isConnected()) {
+      const res = await this.connect();
+      if (!res.success) {
+        return { tables: [], elapsedMs: 0, error: `Connection failed: ${res.error}` };
+      }
+    }
+
+    const query = buildSchemaQuery(this.driverType);
+    const startTime = performance.now();
+    try {
+      const result = await (this._driver as any).executeRaw(query);
+      const elapsed = performance.now() - startTime;
+      const tables = parseSchemaRows(result.rows || []);
+      return { tables, elapsedMs: elapsed };
+    } catch (err: any) {
+      const elapsed = performance.now() - startTime;
+      return { tables: [], elapsedMs: elapsed, error: err.message };
+    }
   }
 
   public async executeChartAggregation(
@@ -234,6 +256,17 @@ export class SqlNotebookController {
       execution.replaceOutput([
         new vscode.NotebookCellOutput([
           vscode.NotebookCellOutputItem.json(payload, 'application/vnd.sqlnb.summary'),
+        ]),
+      ]);
+      execution.end(true, Date.now());
+      return;
+    }
+
+    if (cell.document.languageId === 'schema') {
+      const payload = { cellId: cell.document.uri.toString(), driverType: this.driverType };
+      execution.replaceOutput([
+        new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(payload, 'application/vnd.sqlnb.schema'),
         ]),
       ]);
       execution.end(true, Date.now());

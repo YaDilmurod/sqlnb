@@ -139,23 +139,10 @@ export async function activate(context: vscode.ExtensionContext) {
         return;
       }
 
-      const schemaQuery = `SELECT
-  t.table_schema,
-  t.table_name,
-  c.column_name,
-  c.data_type,
-  c.is_nullable,
-  c.column_default
-FROM information_schema.tables t
-JOIN information_schema.columns c
-  ON t.table_name = c.table_name AND t.table_schema = c.table_schema
-WHERE t.table_schema NOT IN ('pg_catalog', 'information_schema')
-ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
-
       const cell = new vscode.NotebookCellData(
         vscode.NotebookCellKind.Code,
-        schemaQuery,
-        'sql'
+        '-- Database Schema Browser',
+        'schema'
       );
 
       const edit = new vscode.WorkspaceEdit();
@@ -166,8 +153,16 @@ ORDER BY t.table_schema, t.table_name, c.ordinal_position;`;
       edit.set(editor.notebook.uri, [nbEdit]);
       await vscode.workspace.applyEdit(edit);
 
+      // Auto-collapse the source editor for a cleaner look
+      await vscode.commands.executeCommand('notebook.cell.collapseAllCellInputs');
+
+      // Auto-execute the new schema cell
+      const newCellIdx = editor.notebook.cellCount - 1;
+      const range = new vscode.NotebookRange(newCellIdx, newCellIdx + 1);
+      editor.selections = [range];
+      await vscode.commands.executeCommand('notebook.cell.execute');
+
       trackShowSchema();
-      vscode.window.showInformationMessage('Schema query added — run the cell to see your tables & columns');
     })
   );
 

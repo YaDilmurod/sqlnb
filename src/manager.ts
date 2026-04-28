@@ -7,6 +7,7 @@ export class ControllerManager {
   private tableMessaging = vscode.notebooks.createRendererMessaging('sqlnb-table-renderer');
   private chartMessaging = vscode.notebooks.createRendererMessaging('sqlnb-chart-renderer');
   private summaryMessaging = vscode.notebooks.createRendererMessaging('sqlnb-summary-renderer');
+  private schemaMessaging = vscode.notebooks.createRendererMessaging('sqlnb-schema-renderer');
   private disposables: vscode.Disposable[] = [];
 
   constructor(private updateStatusBar: (ctrl: SqlNotebookController | undefined) => void) {
@@ -121,6 +122,39 @@ export class ControllerManager {
           rows: result.rows,
           elapsedMs: result.elapsedMs,
           columnTypes,
+          error: result.error
+        });
+      }
+    }));
+
+    // ── Schema renderer messaging (schema browsing) ──
+    this.disposables.push(this.schemaMessaging.onDidReceiveMessage(async (e) => {
+      const msg = e.message;
+      if (msg.type === 'schema-load') {
+        let ctrl = this.getActiveController();
+        if (!ctrl) {
+          // Try any controller
+          for (const c of this.controllers.values()) {
+            ctrl = c;
+            break;
+          }
+        }
+
+        if (!ctrl) {
+          this.schemaMessaging.postMessage({
+            type: 'schema-load-result',
+            tables: [],
+            elapsedMs: 0,
+            error: 'No active database connection found. Please select a kernel first.'
+          });
+          return;
+        }
+
+        const result = await ctrl.executeSchemaQuery();
+        this.schemaMessaging.postMessage({
+          type: 'schema-load-result',
+          tables: result.tables,
+          elapsedMs: result.elapsedMs,
           error: result.error
         });
       }
