@@ -45,12 +45,12 @@ export function activate(ctx: any) {
                 if (currentSort && currentSort.column === h) {
                     if (currentSort.direction === 'ASC') {
                         icon = ' <span style="font-size:10px;">▲</span>';
-                    } else {
+                    } else if (currentSort.direction === 'DESC') {
                         icon = ' <span style="font-size:10px;">▼</span>';
                     }
                 }
 
-                return `<th data-col="${escapeHtml(h)}" style="padding:6px 12px;text-align:left;font-weight:600;border-bottom:2px solid #ddd;cursor:pointer;" title="Click to sort server-side">
+                return `<th data-col="${escapeHtml(h)}" style="padding:6px 12px;text-align:left;font-weight:600;border-bottom:2px solid #ddd;cursor:pointer;" title="Click to sort: ASC → DESC → Reset">
                     ${escapeHtml(h)}${icon}
                     <div style="color:#888;font-size:10px;font-weight:400;margin-top:2px;">${dataTypeMap[h] || ''}</div>
                 </th>`;
@@ -111,9 +111,17 @@ export function activate(ctx: any) {
                     const col = th.getAttribute('data-col');
                     if (!col) return;
                     
-                    let nextDir = 'ASC';
-                    if (currentSort && currentSort.column === col && currentSort.direction === 'ASC') {
-                        nextDir = 'DESC';
+                    let nextDir: string;
+                    if (currentSort && currentSort.column === col) {
+                        if (currentSort.direction === 'ASC') {
+                            nextDir = 'DESC';
+                        } else if (currentSort.direction === 'DESC') {
+                            nextDir = 'RESET';
+                        } else {
+                            nextDir = 'ASC';
+                        }
+                    } else {
+                        nextDir = 'ASC';
                     }
                     
                     if (ctx.postMessage) {

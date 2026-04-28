@@ -98,6 +98,10 @@ export class SqlNotebookController {
     await this._executeCell(cell, { column, direction });
   }
 
+  public async executeWithoutSort(cell: vscode.NotebookCell) {
+    await this._executeCell(cell);
+  }
+
   public async executeChartAggregation(
     datasetKey: string,
     xCol: string,

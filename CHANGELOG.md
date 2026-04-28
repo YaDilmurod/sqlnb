@@ -1,6 +1,21 @@
 # Change Log
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
+
+## [0.0.56]
+- **Feature:** Data Profile columns are now sorted alphabetically within each type group, matching the chart axis dropdown behavior.
+- **Feature:** Added **Sum** aggregation to the Data Profile for numeric columns.
+- **Feature:** Data Profile now separates columns by type — **Numeric**, **Categorical**, and **Date** — each with its own table and type-appropriate statistics:
+  - **Numeric:** Null %, Distinct, Min, Max, Mean, Sum, 25%, 50%, 75%
+  - **Categorical:** Null %, Distinct, Top Value, Top Frequency (mode)
+  - **Date:** Null %, Distinct, Min, Max, Range (human-readable span)
+- **Feature:** Table header sorting now uses a **3-click cycle**: ASC → DESC → Reset (returns to original query order). Tooltip updated to reflect the new behavior.
+- **Fix:** Data Profile no longer returns empty results when a categorical column is entirely NULL (switched from `CROSS JOIN` to `LEFT JOIN`).
+- **Fix:** Numeric formatting now correctly displays zero values instead of showing blank cells.
+- **Fix:** Numeric values returned as strings from the database (e.g., BigInt/numeric types) are now properly coerced before formatting.
+- **Fix:** Top-value subquery tiebreaker is now deterministic (`ORDER BY freq DESC, val ASC`).
+- **Fix:** CTE alias collisions prevented when column names with special characters sanitize to the same identifier.
+
 ## [0.0.52]
 - **UX:** Added a dedicated **Run Chart** button to prevent unnecessary database queries while configuring chart options.
 - **UX:** Removed auto-preselection of X and Y axes, giving users a clean slate to build their charts.

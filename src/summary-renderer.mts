@@ -114,48 +114,120 @@ export function activate(ctx: any) {
             }
 
             function renderTable(row: any, columnTypes: Record<string, string>, totalRows: number) {
-                let html = '<table class="sqlnb-table"><thead><tr>';
-                html += '<th>Column</th><th>Type</th><th>Null %</th><th>Distinct</th><th>Min</th><th>Max</th><th>Mean</th><th>25%</th><th>50%</th><th>75%</th>';
-                html += '</tr></thead><tbody>';
+                // Separate columns by type and sort each group alphabetically
+                const numericCols: string[] = [];
+                const categoricalCols: string[] = [];
+                const dateCols: string[] = [];
+                const sortFn = (a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase());
 
                 for (const col of Object.keys(columnTypes)) {
                     const type = columnTypes[col];
-                    const tagClass = type === 'numeric' ? 'tag-num' : (type === 'date' ? 'tag-date' : 'tag-str');
-                    
-                    const nulls = Number(row[col + '__nulls'] || 0);
-                    const distinct = Number(row[col + '__distinct'] || 0);
-                    const nullPct = totalRows > 0 ? (nulls / totalRows * 100).toFixed(1) + '%' : '0%';
+                    if (type === 'numeric') numericCols.push(col);
+                    else if (type === 'date') dateCols.push(col);
+                    else categoricalCols.push(col);
+                }
+                numericCols.sort(sortFn);
+                categoricalCols.sort(sortFn);
+                dateCols.sort(sortFn);
 
-                    let min = row[col + '__min'] ?? '';
-                    let max = row[col + '__max'] ?? '';
-                    let mean = row[col + '__mean'] ?? '';
-                    let p25 = row[col + '__p25'] ?? '';
-                    let p50 = row[col + '__p50'] ?? '';
-                    let p75 = row[col + '__p75'] ?? '';
+                // Formatting helpers
+                const fmtNum = (v: any) => {
+                    if (v === null || v === undefined || v === '') return '';
+                    const n = Number(v);
+                    if (isNaN(n)) return '';
+                    return Number(n.toFixed(2)).toLocaleString();
+                };
 
-                    // Formatting helpers
-                    const fmtNum = (v: any) => typeof v === 'number' ? Number(v.toFixed(2)).toLocaleString() : (v ? Number(v).toLocaleString() : '');
+                let html = '';
 
-                    if (type === 'numeric') {
-                        min = fmtNum(min); max = fmtNum(max); mean = fmtNum(mean);
-                        p25 = fmtNum(p25); p50 = fmtNum(p50); p75 = fmtNum(p75);
+                // ── Numeric Columns ──
+                if (numericCols.length > 0) {
+                    html += `<div style="margin-bottom:16px;">`;
+                    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="sqlnb-tag tag-num" style="font-size:12px;padding:3px 10px;">Numeric</span><span style="font-size:12px;color:#888;">${numericCols.length} column${numericCols.length > 1 ? 's' : ''}</span></div>`;
+                    html += '<table class="sqlnb-table"><thead><tr>';
+                    html += '<th>Column</th><th>Null %</th><th>Distinct</th><th>Min</th><th>Max</th><th>Mean</th><th>Sum</th><th>25%</th><th>50%</th><th>75%</th>';
+                    html += '</tr></thead><tbody>';
+                    for (const col of numericCols) {
+                        const nulls = Number(row[col + '__nulls'] || 0);
+                        const distinct = Number(row[col + '__distinct'] || 0);
+                        const nullPct = totalRows > 0 ? (nulls / totalRows * 100).toFixed(1) + '%' : '0%';
+                        html += `<tr>
+                            <td><strong>${esc(col)}</strong></td>
+                            <td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td>
+                            <td>${distinct.toLocaleString()}</td>
+                            <td>${fmtNum(row[col + '__min'])}</td>
+                            <td>${fmtNum(row[col + '__max'])}</td>
+                            <td>${fmtNum(row[col + '__mean'])}</td>
+                            <td>${fmtNum(row[col + '__sum'])}</td>
+                            <td>${fmtNum(row[col + '__p25'])}</td>
+                            <td>${fmtNum(row[col + '__p50'])}</td>
+                            <td>${fmtNum(row[col + '__p75'])}</td>
+                        </tr>`;
                     }
-
-                    html += `<tr>
-                        <td><strong>${esc(col)}</strong></td>
-                        <td><span class="sqlnb-tag ${tagClass}">${type}</span></td>
-                        <td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td>
-                        <td>${distinct.toLocaleString()}</td>
-                        <td>${esc(min)}</td>
-                        <td>${esc(max)}</td>
-                        <td>${esc(mean)}</td>
-                        <td>${esc(p25)}</td>
-                        <td>${esc(p50)}</td>
-                        <td>${esc(p75)}</td>
-                    </tr>`;
+                    html += '</tbody></table></div>';
                 }
 
-                html += '</tbody></table>';
+                // ── Categorical Columns ──
+                if (categoricalCols.length > 0) {
+                    html += `<div style="margin-bottom:16px;">`;
+                    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="sqlnb-tag tag-str" style="font-size:12px;padding:3px 10px;">Categorical</span><span style="font-size:12px;color:#888;">${categoricalCols.length} column${categoricalCols.length > 1 ? 's' : ''}</span></div>`;
+                    html += '<table class="sqlnb-table"><thead><tr>';
+                    html += '<th>Column</th><th>Null %</th><th>Distinct</th><th>Top Value</th><th>Top Freq</th>';
+                    html += '</tr></thead><tbody>';
+                    for (const col of categoricalCols) {
+                        const nulls = Number(row[col + '__nulls'] || 0);
+                        const distinct = Number(row[col + '__distinct'] || 0);
+                        const nullPct = totalRows > 0 ? (nulls / totalRows * 100).toFixed(1) + '%' : '0%';
+                        const topVal = row[col + '__top'] ?? '—';
+                        const topFreq = row[col + '__top_freq'] != null ? Number(row[col + '__top_freq']).toLocaleString() : '—';
+                        html += `<tr>
+                            <td><strong>${esc(col)}</strong></td>
+                            <td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td>
+                            <td>${distinct.toLocaleString()}</td>
+                            <td>${esc(String(topVal))}</td>
+                            <td>${topFreq}</td>
+                        </tr>`;
+                    }
+                    html += '</tbody></table></div>';
+                }
+
+                // ── Date Columns ──
+                if (dateCols.length > 0) {
+                    html += `<div style="margin-bottom:16px;">`;
+                    html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="sqlnb-tag tag-date" style="font-size:12px;padding:3px 10px;">Date</span><span style="font-size:12px;color:#888;">${dateCols.length} column${dateCols.length > 1 ? 's' : ''}</span></div>`;
+                    html += '<table class="sqlnb-table"><thead><tr>';
+                    html += '<th>Column</th><th>Null %</th><th>Distinct</th><th>Min</th><th>Max</th><th>Range</th>';
+                    html += '</tr></thead><tbody>';
+                    for (const col of dateCols) {
+                        const nulls = Number(row[col + '__nulls'] || 0);
+                        const distinct = Number(row[col + '__distinct'] || 0);
+                        const nullPct = totalRows > 0 ? (nulls / totalRows * 100).toFixed(1) + '%' : '0%';
+                        const minVal = row[col + '__min'] ?? '';
+                        const maxVal = row[col + '__max'] ?? '';
+                        let rangeStr = '—';
+                        if (minVal && maxVal) {
+                            const d1 = new Date(minVal);
+                            const d2 = new Date(maxVal);
+                            if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
+                                const diffDays = Math.round(Math.abs(d2.getTime() - d1.getTime()) / (1000 * 60 * 60 * 24));
+                                if (diffDays >= 365) rangeStr = (diffDays / 365).toFixed(1) + ' years';
+                                else if (diffDays >= 30) rangeStr = Math.round(diffDays / 30) + ' months';
+                                else rangeStr = diffDays + ' days';
+                            }
+                        }
+                        html += `<tr>
+                            <td><strong>${esc(col)}</strong></td>
+                            <td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td>
+                            <td>${distinct.toLocaleString()}</td>
+                            <td>${esc(String(minVal))}</td>
+                            <td>${esc(String(maxVal))}</td>
+                            <td style="color:#166534;font-weight:500;">${rangeStr}</td>
+                        </tr>`;
+                    }
+                    html += '</tbody></table></div>';
+                }
+
+                if (!html) html = '<div style="color:#888;font-size:13px;">No columns to profile.</div>';
                 
                 const contentEl = $('content');
                 if (contentEl) contentEl.innerHTML = html;

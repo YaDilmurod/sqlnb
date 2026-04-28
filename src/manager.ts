@@ -30,7 +30,11 @@ export class ControllerManager {
         if (targetNotebook && targetCell) {
           const ctrl = this.activeNotebookControllers.get(targetNotebook.uri.toString());
           if (ctrl) {
-            ctrl.executeWithSort(targetCell, column, direction);
+            if (direction === 'RESET') {
+              ctrl.executeWithoutSort(targetCell);
+            } else {
+              ctrl.executeWithSort(targetCell, column, direction);
+            }
           }
         }
       }
