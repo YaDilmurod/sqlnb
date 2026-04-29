@@ -19,6 +19,7 @@ export interface SchemaColumn {
 export interface SchemaTable {
   schema: string;
   name: string;
+  tableType: 'table' | 'view' | 'materialized_view';
   columns: SchemaColumn[];
 }
 
@@ -27,6 +28,7 @@ export function buildSchemaQuery(driverType: 'postgres' | 'duckdb' = 'postgres')
     return `SELECT
   c.table_schema,
   c.table_name,
+  t.table_type,
   c.data_type,
   c.data_type AS udt_name,
   c.column_name,
@@ -46,6 +48,7 @@ ORDER BY c.table_schema, c.table_name, c.ordinal_position`;
   return `SELECT
   c.table_schema,
   c.table_name,
+  t.table_type,
   c.column_name,
   CASE
     WHEN c.data_type = 'USER-DEFINED' THEN c.udt_name
@@ -62,7 +65,6 @@ ORDER BY c.table_schema, c.table_name, c.ordinal_position`;
 FROM information_schema.columns c
 JOIN information_schema.tables t
   ON c.table_name = t.table_name AND c.table_schema = t.table_schema
-  AND t.table_type = 'BASE TABLE'
 LEFT JOIN (
   SELECT kcu.table_schema, kcu.table_name, kcu.column_name
   FROM information_schema.key_column_usage kcu
@@ -74,7 +76,31 @@ LEFT JOIN (
   AND c.table_name = pk.table_name
   AND c.column_name = pk.column_name
 WHERE c.table_schema NOT IN ('pg_catalog', 'information_schema')
-ORDER BY c.table_schema, c.table_name, c.ordinal_position`;
+
+UNION ALL
+
+SELECT
+  mv.schemaname AS table_schema,
+  mv.matviewname AS table_name,
+  'MATERIALIZED VIEW' AS table_type,
+  a.attname AS column_name,
+  pg_catalog.format_type(a.atttypid, a.atttypmod) AS data_type,
+  t.typname AS udt_name,
+  CASE WHEN a.attnotnull THEN 'NO' ELSE 'YES' END AS is_nullable,
+  pg_get_expr(d.adbin, d.adrelid) AS column_default,
+  a.attnum AS ordinal_position,
+  CASE WHEN a.atttypmod > 0 AND t.typname IN ('varchar','bpchar') THEN a.atttypmod - 4 ELSE NULL END AS character_maximum_length,
+  CASE WHEN t.typname IN ('numeric','decimal') THEN ((a.atttypmod - 4) >> 16) & 65535 ELSE NULL END AS numeric_precision,
+  false AS is_primary_key
+FROM pg_catalog.pg_matviews mv
+JOIN pg_catalog.pg_class cls ON cls.relname = mv.matviewname
+  AND cls.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = mv.schemaname)
+JOIN pg_catalog.pg_attribute a ON a.attrelid = cls.oid AND a.attnum > 0 AND NOT a.attisdropped
+JOIN pg_catalog.pg_type t ON t.oid = a.atttypid
+LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid = cls.oid AND d.adnum = a.attnum
+WHERE mv.schemaname NOT IN ('pg_catalog', 'information_schema')
+
+ORDER BY table_schema, table_name, ordinal_position`;
 }
 
 export function parseSchemaRows(rows: Record<string, any>[]): SchemaTable[] {
@@ -88,7 +114,14 @@ export function parseSchemaRows(rows: Record<string, any>[]): SchemaTable[] {
 
     const key = `${schema}.${table}`;
     if (!tableMap.has(key)) {
-      tableMap.set(key, { schema, name: table, columns: [] });
+      const rawType = String(row.table_type || 'BASE TABLE').toUpperCase();
+      let tableType: 'table' | 'view' | 'materialized_view' = 'table';
+      if (rawType.includes('MATERIALIZED')) {
+        tableType = 'materialized_view';
+      } else if (rawType === 'VIEW') {
+        tableType = 'view';
+      }
+      tableMap.set(key, { schema, name: table, tableType, columns: [] });
     }
 
     // isPrimaryKey: handle boolean true, string 't'/'true'/'1', or numeric 1

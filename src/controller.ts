@@ -18,7 +18,7 @@ export class SqlNotebookController {
   private _lastResult: Record<string, any>[] = [];
   private _resultStore: Map<string, StoredResult> = new Map();
   private _dfCounter = 0;
-  private _activeQueries: Map<string, number> = new Map();
+  private _isExecuting = false;
 
   constructor(
     public readonly id: string,
@@ -68,20 +68,30 @@ export class SqlNotebookController {
   }
 
   async connect(connStr?: string): Promise<{ success: boolean; error?: string }> {
-    try {
-      if (this._driver) {
-        await this._driver.disconnect();
+    return vscode.window.withProgress(
+      {
+        location: vscode.ProgressLocation.Notification,
+        title: '$(loading~spin) Connecting to database…',
+        cancellable: false,
+      },
+      async (progress) => {
+        try {
+          if (this._driver) {
+            await this._driver.disconnect();
+          }
+          if (connStr) {
+            this.connectionString = connStr;
+          }
+          this._driver = this._createDriver();
+          progress.report({ message: 'Attempting connection (up to 3 retries)…' });
+          await this._driver.connect(this.connectionString || undefined);
+          return { success: true };
+        } catch (err: any) {
+          this._driver = null;
+          return { success: false, error: err.message };
+        }
       }
-      if (connStr) {
-        this.connectionString = connStr;
-      }
-      this._driver = this._createDriver();
-      await this._driver.connect(this.connectionString || undefined);
-      return { success: true };
-    } catch (err: any) {
-      this._driver = null;
-      return { success: false, error: err.message };
-    }
+    );
   }
 
   async disconnect(): Promise<void> {
@@ -129,7 +139,8 @@ export class SqlNotebookController {
     xCol: string,
     yCol: string,
     aggFn: string,
-    colorCol?: string
+    colorCol?: string,
+    extraYCols?: string[]
   ): Promise<{ rows: Record<string, any>[]; elapsedMs: number; error?: string }> {
     const stored = this._resultStore.get(datasetKey);
     if (!stored) {
@@ -143,7 +154,7 @@ export class SqlNotebookController {
       }
     }
 
-    const aggQuery = buildAggregationQuery(stored.query, xCol, yCol, aggFn, colorCol || undefined, this.driverType);
+    const aggQuery = buildAggregationQuery(stored.query, xCol, yCol, aggFn, colorCol || undefined, this.driverType, extraYCols);
     
     const startTime = performance.now();
     try {
@@ -217,17 +228,12 @@ export class SqlNotebookController {
     }
   }
 
-  private async _interrupt(notebook: vscode.NotebookDocument): Promise<void> {
-    if (!this._driver) return;
-    for (const cell of notebook.getCells()) {
-      const pid = this._activeQueries.get(cell.document.uri.toString());
-      if (pid) {
-        try {
-          await this._driver.cancelQuery(pid);
-        } catch (err) {
-          console.error("Failed to cancel query", err);
-        }
-      }
+  private async _interrupt(_notebook: vscode.NotebookDocument): Promise<void> {
+    if (!this._driver || !this._isExecuting) return;
+    try {
+      await this._driver.cancelQuery();
+    } catch (err) {
+      console.error("Failed to cancel query", err);
     }
   }
 
@@ -308,15 +314,11 @@ export class SqlNotebookController {
       const isSelect = /^(SELECT|WITH|VALUES|TABLE|\()/i.test(cleanQuery);
       const cellUriStr = cell.document.uri.toString();
 
-      const pid = await this._driver.getBackendPid();
-      if (pid !== undefined) {
-        this._activeQueries.set(cellUriStr, pid);
-      }
-
       let result;
       let totalEstimatedRows: number | undefined;
 
       try {
+        this._isExecuting = true;
         if (isSelect) {
           totalEstimatedRows = await this._driver.getEstimatedRows(query);
           result = await this._driver.executeSelect(query, maxRows);
@@ -324,7 +326,8 @@ export class SqlNotebookController {
           result = await this._driver.executeStatement(query);
         }
       } catch (err: any) {
-        if (err.message && err.message.includes('canceling statement due to user request')) {
+        const msg = err.message || '';
+        if (msg.includes('canceling statement due to user request') || msg.includes('INTERRUPT')) {
            execution.replaceOutput([
              new vscode.NotebookCellOutput([
                vscode.NotebookCellOutputItem.text('🛑 Query cancelled by user.', 'text/plain'),
@@ -335,7 +338,7 @@ export class SqlNotebookController {
         }
         throw err;
       } finally {
-        this._activeQueries.delete(cellUriStr);
+        this._isExecuting = false;
       }
 
       const elapsed = performance.now() - startTime;

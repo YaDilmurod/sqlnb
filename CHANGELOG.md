@@ -2,6 +2,30 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.0.57]
+
+### Schema Browser
+- **Feature:** New notebooks now include a **Schema Browser** cell at the top (right after the welcome block), so users immediately see their database structure.
+- **Feature:** The `showSchema` command now inserts the schema cell at the **beginning** of the notebook instead of the end.
+- **Feature:** Schema browser now shows **Views** and **Materialized Views** alongside tables, with distinct icons: 📄 Tables, 👁 Views, 🧊 Materialized Views.
+- **Feature:** Added **type filter toggles** (pill buttons) in the schema toolbar to show/hide Tables, Views, and Materialized Views independently.
+- **Feature:** Status bar now shows a per-type breakdown (e.g. "12 tables · 3 views · 1 mat. view · 45ms").
+- **Feature:** All schemas now start **collapsed by default** for a cleaner initial view.
+
+### Charts
+- **Feature:** Added **multiple Y axes** support — click "+ Add Y Axis" to add additional Y columns, each rendered as its own series.
+- **Feature:** Added **Separate Y Axes** toggle — places each Y series on alternating left/right axes with distinct scales.
+- **Feature:** Added **Logarithmic Scale** toggle — switches the value axis to log scale for data with large ranges.
+
+### Connection & Reliability
+- **Reliability:** PostgreSQL connections now have a **5-second timeout** with **3 retry attempts** (0.5s delay between retries), preventing indefinite hangs on unreachable servers.
+- **UX:** Database connection attempts now show a **visible progress notification** ("Connecting to database…") so users know the extension is actively trying to connect.
+- **Fix:** **Interrupt/Cancel now actually works.** Previously, the tracked PID belonged to a different pool connection than the one running the query, so `pg_cancel_backend` targeted the wrong process. PID is now tracked from the same client executing the query.
+- **Fix:** DuckDB queries can now be interrupted via `db.interrupt()` (previously was a no-op).
+
+### Serializer
+- **Feature:** The `.sqlnb` file format now properly serializes and deserializes **schema** and **summary** cell types (previously they were lost on save/reload).
+
 ## [0.0.56]
 - **Feature:** Data Profile columns are now sorted alphabetically within each type group, matching the chart axis dropdown behavior.
 - **Feature:** Added **Sum** aggregation to the Data Profile for numeric columns.

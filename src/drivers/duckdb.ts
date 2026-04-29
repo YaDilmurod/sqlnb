@@ -150,7 +150,12 @@ export class DuckDbDriver implements IDatabaseDriver {
   }
 
   async cancelQuery(_pid?: number): Promise<void> {
-    // DuckDB doesn't support external query cancellation easily — no-op.
+    if (!this._db) return;
+    try {
+      await this._db.interrupt();
+    } catch {
+      // interrupt() may not be available in all duckdb versions — non-critical
+    }
   }
 
   async getBackendPid(): Promise<number | undefined> {

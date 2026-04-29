@@ -21,6 +21,7 @@ export class PostgresDriver implements IDatabaseDriver {
   readonly type = 'postgres' as const;
   private _pool: Pool | null = null;
   private _connectionString: string = '';
+  private _activePid: number | null = null;
 
   isConnected(): boolean {
     return this._pool !== null;
@@ -34,10 +35,33 @@ export class PostgresDriver implements IDatabaseDriver {
       throw new Error('PostgreSQL requires a connection string.');
     }
     this._connectionString = connectionString;
-    this._pool = new Pool({ connectionString });
-    // Test the connection
-    const client = await this._pool.connect();
-    client.release();
+    this._pool = new Pool({
+      connectionString,
+      connectionTimeoutMillis: 5000,  // 5-second connection timeout
+    });
+
+    // Test the connection with retries
+    const maxAttempts = 3;
+    const retryDelayMs = 500;
+    let lastError: Error | undefined;
+
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      try {
+        const client = await this._pool.connect();
+        client.release();
+        return; // success
+      } catch (err: any) {
+        lastError = err;
+        if (attempt < maxAttempts) {
+          await new Promise(resolve => setTimeout(resolve, retryDelayMs));
+        }
+      }
+    }
+
+    // All attempts failed — clean up and throw
+    await this._pool.end();
+    this._pool = null;
+    throw new Error(`Failed after ${maxAttempts} attempts: ${lastError?.message || 'Unknown error'}`);
   }
 
   async disconnect(): Promise<void> {
@@ -47,10 +71,23 @@ export class PostgresDriver implements IDatabaseDriver {
     }
   }
 
+  /**
+   * Get the backend PID from a client connection and store it for cancellation.
+   */
+  private async _trackPid(client: PoolClient): Promise<void> {
+    try {
+      const res = await client.query('SELECT pg_backend_pid()');
+      this._activePid = res.rows[0].pg_backend_pid;
+    } catch {
+      this._activePid = null;
+    }
+  }
+
   async executeSelect(query: string, maxRows: number): Promise<QueryResult> {
     if (!this._pool) throw new Error('Not connected');
     const client = await this._pool.connect();
     try {
+      await this._trackPid(client);
       await client.query('BEGIN');
       await client.query(`DECLARE _sqlnb_cursor NO SCROLL CURSOR FOR ${query}`);
       const result = await client.query(`FETCH ${maxRows + 1} FROM _sqlnb_cursor`);
@@ -75,6 +112,7 @@ export class PostgresDriver implements IDatabaseDriver {
       try { await client.query('ROLLBACK'); } catch { }
       throw err;
     } finally {
+      this._activePid = null;
       client.release();
     }
   }
@@ -83,6 +121,7 @@ export class PostgresDriver implements IDatabaseDriver {
     if (!this._pool) throw new Error('Not connected');
     const client = await this._pool.connect();
     try {
+      await this._trackPid(client);
       const result = await client.query(query);
       return {
         rows: sanitizeRows(result.rows || []),
@@ -92,6 +131,7 @@ export class PostgresDriver implements IDatabaseDriver {
         hasMore: false,
       };
     } finally {
+      this._activePid = null;
       client.release();
     }
   }
@@ -112,25 +152,21 @@ export class PostgresDriver implements IDatabaseDriver {
     }
   }
 
-  async cancelQuery(pid?: number): Promise<void> {
-    if (!this._pool || pid === undefined) return;
+  async cancelQuery(_pid?: number): Promise<void> {
+    const targetPid = _pid || this._activePid;
+    if (!this._pool || !targetPid) return;
+    // Use a SEPARATE connection to send the cancel signal
     const client = await this._pool.connect();
     try {
-      await client.query(`SELECT pg_cancel_backend(${pid})`);
+      await client.query(`SELECT pg_cancel_backend($1)`, [targetPid]);
     } finally {
       client.release();
     }
   }
 
   async getBackendPid(): Promise<number | undefined> {
-    if (!this._pool) return undefined;
-    const client = await this._pool.connect();
-    try {
-      const res = await client.query('SELECT pg_backend_pid()');
-      return res.rows[0].pg_backend_pid;
-    } finally {
-      client.release();
-    }
+    // Return the currently tracked active PID if available
+    return this._activePid ?? undefined;
   }
 
   /**
@@ -140,9 +176,11 @@ export class PostgresDriver implements IDatabaseDriver {
     if (!this._pool) throw new Error('Not connected');
     const client = await this._pool.connect();
     try {
+      await this._trackPid(client);
       const result = await client.query(query);
       return { rows: sanitizeRows(result.rows || []) };
     } finally {
+      this._activePid = null;
       client.release();
     }
   }

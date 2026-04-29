@@ -61,10 +61,13 @@ export function buildAggregationQuery(
   yCol: string,
   aggFn: string,
   colorCol?: string,
-  driverType: 'postgres' | 'duckdb' = 'postgres'
+  driverType: 'postgres' | 'duckdb' = 'postgres',
+  extraYCols?: string[]
 ): string {
   // Strip trailing semicolons from original query
   const cleanOriginal = originalQuery.replace(/;+\s*$/, '');
+
+  const allYCols = [yCol, ...(extraYCols || [])];
 
   const groupCols = [xCol];
   if (colorCol) {
@@ -74,35 +77,28 @@ export function buildAggregationQuery(
   const quotedGroupCols = groupCols.map(c => `"${c}"`);
   const groupByClause = quotedGroupCols.join(', ');
 
-  // Postgres does not have TRY_CAST, so we emulate it with a regex that checks for valid numbers.
-  const yCastPg = `CASE WHEN "${yCol}"::text ~ '^[-+]?[0-9]*\\.?([0-9]+)?([eE][-+]?[0-9]+)?$' AND "${yCol}"::text != '' AND "${yCol}"::text != '.' THEN "${yCol}"::numeric ELSE NULL END`;
-  const yCast = driverType === 'duckdb' ? `TRY_CAST("${yCol}" AS numeric)` : yCastPg;
-
-  let yExpression: string;
-  switch (aggFn) {
-    case 'count':
-      yExpression = `COUNT(*) AS "_sqlnb_agg_value"`;
-      break;
-    case 'sum':
-      yExpression = `COALESCE(SUM(${yCast}), 0) AS "_sqlnb_agg_value"`;
-      break;
-    case 'avg':
-      yExpression = `COALESCE(AVG(${yCast}), 0) AS "_sqlnb_agg_value"`;
-      break;
-    case 'min':
-      yExpression = `MIN("${yCol}") AS "_sqlnb_agg_value"`;
-      break;
-    case 'max':
-      yExpression = `MAX("${yCol}") AS "_sqlnb_agg_value"`;
-      break;
-    default:
-      // "none" aggregation — return raw data with a limit
-      const selectCols = [xCol, yCol];
-      if (colorCol) selectCols.push(colorCol);
-      const uniqueCols = [...new Set(selectCols)];
-      const quotedCols = uniqueCols.map(c => `"${c}"`).join(', ');
-      return `SELECT ${quotedCols} FROM (\n${cleanOriginal}\n) AS _sqlnb_chart LIMIT 5000`;
+  if (aggFn === 'none' || !aggFn) {
+    const selectCols = [xCol, ...allYCols];
+    if (colorCol) selectCols.push(colorCol);
+    const uniqueCols = [...new Set(selectCols)];
+    const quotedCols = uniqueCols.map(c => `"${c}"`).join(', ');
+    return `SELECT ${quotedCols} FROM (\n${cleanOriginal}\n) AS _sqlnb_chart LIMIT 5000`;
   }
 
-  return `SELECT ${groupByClause}, ${yExpression} FROM (\n${cleanOriginal}\n) AS _sqlnb_chart GROUP BY ${groupByClause}`;
+  const yExpressions = allYCols.map((col, idx) => {
+    const alias = idx === 0 ? '_sqlnb_agg_value' : `_sqlnb_agg_value_${idx}`;
+    const yCastPg = `CASE WHEN "${col}"::text ~ '^[-+]?[0-9]*\\.?([0-9]+)?([eE][-+]?[0-9]+)?$' AND "${col}"::text != '' AND "${col}"::text != '.' THEN "${col}"::numeric ELSE NULL END`;
+    const yCast = driverType === 'duckdb' ? `TRY_CAST("${col}" AS numeric)` : yCastPg;
+
+    switch (aggFn) {
+      case 'count': return `COUNT(*) AS "${alias}"`;
+      case 'sum': return `COALESCE(SUM(${yCast}), 0) AS "${alias}"`;
+      case 'avg': return `COALESCE(AVG(${yCast}), 0) AS "${alias}"`;
+      case 'min': return `MIN("${col}") AS "${alias}"`;
+      case 'max': return `MAX("${col}") AS "${alias}"`;
+      default: return `COALESCE(SUM(${yCast}), 0) AS "${alias}"`;
+    }
+  });
+
+  return `SELECT ${groupByClause}, ${yExpressions.join(', ')} FROM (\n${cleanOriginal}\n) AS _sqlnb_chart GROUP BY ${groupByClause}`;
 }

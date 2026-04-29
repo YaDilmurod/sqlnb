@@ -76,7 +76,7 @@ export function activate(ctx: any) {
               }
             </style>
             <div style="font-family:system-ui,sans-serif; display:flex; gap:20px; align-items:stretch; box-sizing:border-box; width:100%; overflow:hidden;" id="${vizId}-root">
-              <div style="flex:0 0 240px; display:flex; flex-direction:column; gap:12px; background:#f9f9f9; padding:16px; border-radius:6px; border:1px solid #ddd;">
+              <div style="flex:0 0 240px; display:flex; flex-direction:column; gap:12px; background:#f9f9f9; padding:16px; border-radius:6px; border:1px solid #ddd; max-height:600px; overflow-y:auto;">
                 <h4 style="margin:0 0 4px 0; color:#333; font-size:14px;">Chart Settings</h4>
                 <label style="${ls}">Dataset
                   <select id="${vizId}-ds" style="${ss};font-weight:600;">${dsOptions}</select>
@@ -96,6 +96,11 @@ export function activate(ctx: any) {
                 <label style="${ls}">Y Axis
                   <select id="${vizId}-y" style="${ss}"></select>
                 </label>
+                <div id="${vizId}-extra-y-section" style="display:flex;flex-direction:column;gap:4px;">
+                  <span style="color:#555;font-size:11px;font-weight:600;">Additional Y Axes</span>
+                  <div id="${vizId}-extra-y-list" style="display:flex;flex-direction:column;gap:4px;"></div>
+                  <button id="${vizId}-add-y" style="padding:4px 8px;background:#e0e7ff;color:#4f46e5;border:1px solid #c7d2fe;border-radius:4px;cursor:pointer;font-size:11px;font-weight:600;">+ Add Y Axis</button>
+                </div>
                 <label style="${ls}">Color / Group
                   <select id="${vizId}-color" style="${ss}"></select>
                 </label>
@@ -125,6 +130,15 @@ export function activate(ctx: any) {
                     <option value="asc">Ascending (A-Z, 0-9)</option>
                     <option value="desc" selected>Descending (Z-A, 9-0)</option>
                   </select>
+                </label>
+                <div style="height:1px; background:#e0e0e0; margin:4px 0;"></div>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#555;font-weight:600;cursor:pointer;">
+                  <input type="checkbox" id="${vizId}-separate-axes" style="accent-color:#4f46e5;" />
+                  Separate Y Axes
+                </label>
+                <label style="display:flex;align-items:center;gap:6px;font-size:11px;color:#555;font-weight:600;cursor:pointer;">
+                  <input type="checkbox" id="${vizId}-log-scale" style="accent-color:#4f46e5;" />
+                  Logarithmic Scale
                 </label>
                 <div id="${vizId}-status" style="font-size:11px;color:#888;padding:4px 0;"></div>
               </div>
@@ -171,6 +185,39 @@ export function activate(ctx: any) {
                 el.innerHTML = html;
             }
 
+            function getExtraYCols(): string[] {
+                const list = $('extra-y-list');
+                if (!list) return [];
+                const selects = list.querySelectorAll('select');
+                const cols: string[] = [];
+                selects.forEach((s: any) => { if (s.value) cols.push(s.value); });
+                return cols;
+            }
+
+            function addExtraYRow(value?: string) {
+                const list = $('extra-y-list');
+                if (!list) return;
+                const ds = DATASETS[currentDatasetIdx];
+                if (!ds) return;
+                const row = document.createElement('div');
+                row.style.cssText = 'display:flex;gap:4px;align-items:center;';
+                const sel = document.createElement('select');
+                sel.style.cssText = '${ss}flex:1;';
+                let html = '<option value="">None</option>';
+                const sorted = ds.columns.slice().sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
+                sorted.forEach((c: string) => { html += '<option value="' + esc(c) + '">' + esc(c) + '</option>'; });
+                sel.innerHTML = html;
+                if (value) sel.value = value;
+                sel.addEventListener('change', () => { saveState(); });
+                const removeBtn = document.createElement('button');
+                removeBtn.textContent = '✕';
+                removeBtn.style.cssText = 'padding:2px 6px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;cursor:pointer;font-size:11px;';
+                removeBtn.addEventListener('click', () => { row.remove(); saveState(); });
+                row.appendChild(sel);
+                row.appendChild(removeBtn);
+                list.appendChild(row);
+            }
+
             function initDataset(restore: boolean = false) {
                 currentDatasetIdx = parseInt(restore && savedState.ds ? savedState.ds : ($('ds')?.value || '0')) || 0;
                 if (currentDatasetIdx >= DATASETS.length) currentDatasetIdx = 0;
@@ -181,6 +228,10 @@ export function activate(ctx: any) {
                 populateSelect('x', ds.columns, true);
                 populateSelect('y', ds.columns, true);
                 populateSelect('color', ds.columns, true);
+
+                // Clear extra Y rows
+                const extraList = $('extra-y-list');
+                if (extraList) extraList.innerHTML = '';
                 
                 if (restore && savedState.ds !== undefined) {
                     if ($('ds')) $('ds').value = savedState.ds;
@@ -191,6 +242,11 @@ export function activate(ctx: any) {
                     if ($('agg')) $('agg').value = savedState.agg;
                     if ($('sort-by')) $('sort-by').value = savedState.sortBy;
                     if ($('sort-dir')) $('sort-dir').value = savedState.sortDir;
+                    if ($('separate-axes')) $('separate-axes').checked = !!savedState.separateAxes;
+                    if ($('log-scale')) $('log-scale').checked = !!savedState.logScale;
+                    if (savedState.extraYCols && Array.isArray(savedState.extraYCols)) {
+                        savedState.extraYCols.forEach((c: string) => addExtraYRow(c));
+                    }
                 } else {
                     const typeEl = $('type');
                     const xEl = $('x');
@@ -199,6 +255,8 @@ export function activate(ctx: any) {
                     if (typeEl) typeEl.value = 'bar';
                     if (xEl) xEl.value = '';
                     if (yEl) yEl.value = '';
+                    if ($('separate-axes')) $('separate-axes').checked = false;
+                    if ($('log-scale')) $('log-scale').checked = false;
                 }
 
                 lastAggRows = null;
@@ -222,6 +280,7 @@ export function activate(ctx: any) {
                 const ds = DATASETS[currentDatasetIdx];
                 const colorCol = $('color')?.value || '';
                 const aggFn = $('agg')?.value || 'sum';
+                const extraYCols = getExtraYCols();
 
                 pendingRequestId++;
                 const requestId = pendingRequestId;
@@ -234,7 +293,8 @@ export function activate(ctx: any) {
                         type: 'chart-aggregate',
                         requestId: requestId,
                         datasetKey: ds.key,
-                        xCol, yCol, colorCol, aggFn
+                        xCol, yCol, colorCol, aggFn,
+                        extraYCols: extraYCols.length > 0 ? extraYCols : undefined
                     });
                 } else {
                     hideLoading();
@@ -288,62 +348,83 @@ export function activate(ctx: any) {
                 const type = $('type')?.value || 'bar';
                 const sortBy = $('sort-by')?.value || 'none';
                 const sortDir = $('sort-dir')?.value || 'desc';
+                const separateAxes = $('separate-axes')?.checked || false;
+                const logScale = $('log-scale')?.checked || false;
 
-                const yKey = aggFn === 'none' ? yCol : '_sqlnb_agg_value';
+                const extraYCols = getExtraYCols();
+                const allYCols = [yCol, ...extraYCols];
+                const hasMultiY = allYCols.length > 1;
 
-                // Build labels and grouped series from aggregated rows
+                // Determine yKey for each Y column
+                const yKeys = allYCols.map((col: string, idx: number) => {
+                    if (aggFn === 'none') return col;
+                    return idx === 0 ? '_sqlnb_agg_value' : `_sqlnb_agg_value_${idx}`;
+                });
+
+                // Build labels
                 const labelOrder: string[] = [];
                 const labelSet: Record<string, boolean> = {};
-                const groups: Record<string, Record<string, number[]>> = {};
-
                 aggRows.forEach((r: any) => {
                     const x = String(r[xCol] != null ? r[xCol] : '');
-                    const g = colorCol ? String(r[colorCol] != null ? r[colorCol] : '') : '__all';
-                    const y = Number(r[yKey]) || 0;
-
                     if (!labelSet[x]) { labelSet[x] = true; labelOrder.push(x); }
-                    if (!groups[g]) groups[g] = {};
-                    if (!groups[g][x]) groups[g][x] = [];
-                    groups[g][x].push(y);
                 });
 
-                const groupNames = Object.keys(groups);
-                const aggDatasets = groupNames.map((g: string) => {
-                    const vals = labelOrder.map((lbl: string) => {
-                        const arr = groups[g][lbl] || [];
-                        if (aggFn !== 'none') return arr[0] || 0;
-                        return arr.reduce((a: number, b: number) => a + b, 0);
+                // Build series data — one series per Y column (or per group if color is used)
+                let allSeries: { label: string; values: number[]; yAxisIdx: number }[] = [];
+
+                if (colorCol && !hasMultiY) {
+                    // Color grouping mode (single Y only)
+                    const groups: Record<string, Record<string, number[]>> = {};
+                    aggRows.forEach((r: any) => {
+                        const x = String(r[xCol] != null ? r[xCol] : '');
+                        const g = String(r[colorCol] != null ? r[colorCol] : '');
+                        const y = Number(r[yKeys[0]]) || 0;
+                        if (!groups[g]) groups[g] = {};
+                        if (!groups[g][x]) groups[g][x] = [];
+                        groups[g][x].push(y);
                     });
-                    return { label: g === '__all' ? yCol : g, values: vals };
-                });
+                    Object.keys(groups).forEach((g: string) => {
+                        const vals = labelOrder.map((lbl: string) => {
+                            const arr = groups[g][lbl] || [];
+                            return aggFn !== 'none' ? (arr[0] || 0) : arr.reduce((a: number, b: number) => a + b, 0);
+                        });
+                        allSeries.push({ label: g, values: vals, yAxisIdx: 0 });
+                    });
+                } else {
+                    // Multi-Y mode or single Y without color
+                    yKeys.forEach((yKey: string, idx: number) => {
+                        const vals = labelOrder.map((lbl: string) => {
+                            const matching = aggRows.filter((r: any) => String(r[xCol] != null ? r[xCol] : '') === lbl);
+                            if (matching.length === 0) return 0;
+                            const v = Number(matching[0][yKey]) || 0;
+                            return v;
+                        });
+                        allSeries.push({ label: allYCols[idx], values: vals, yAxisIdx: separateAxes ? idx : 0 });
+                    });
+                }
 
-                // Sorting (client-side only, no DB query needed)
+                // Sorting
                 let sortedLabels = labelOrder;
-                let sortedDatasets = aggDatasets;
+                let sortedSeries = allSeries;
 
                 if (sortBy !== 'none' && labelOrder.length > 0) {
                     const paired = labelOrder.map((lbl: string, i: number) => {
                         let totalY = 0;
-                        aggDatasets.forEach((ds: any) => { totalY += (ds.values[i] || 0); });
+                        allSeries.forEach((s: any) => { totalY += (s.values[i] || 0); });
                         return { label: lbl, y: totalY, index: i };
                     });
-
                     paired.sort((a: any, b: any) => {
                         let cmp = 0;
                         if (sortBy === 'x') {
                             const numA = Number(a.label), numB = Number(b.label);
                             if (!isNaN(numA) && !isNaN(numB)) cmp = numA - numB;
                             else cmp = String(a.label).localeCompare(String(b.label));
-                        } else if (sortBy === 'y') {
-                            cmp = a.y - b.y;
-                        }
+                        } else if (sortBy === 'y') { cmp = a.y - b.y; }
                         return sortDir === 'asc' ? cmp : -cmp;
                     });
-
                     sortedLabels = paired.map((p: any) => p.label);
-                    sortedDatasets = aggDatasets.map((ds: any) => ({
-                        label: ds.label,
-                        values: paired.map((p: any) => ds.values[p.index])
+                    sortedSeries = allSeries.map((s: any) => ({
+                        ...s, values: paired.map((p: any) => s.values[p.index])
                     }));
                 }
 
@@ -356,6 +437,21 @@ export function activate(ctx: any) {
                     return value;
                 };
 
+                const axisType = logScale ? 'log' : 'value';
+                const numYAxes = separateAxes ? allYCols.length : 1;
+                const yAxesArr = [];
+                for (let i = 0; i < numYAxes; i++) {
+                    yAxesArr.push({
+                        type: axisType,
+                        name: allYCols[i] || '',
+                        position: i % 2 === 0 ? 'left' : 'right',
+                        offset: Math.floor(i / 2) * 60,
+                        axisLabel: { formatter: valFormatter },
+                        splitLine: { show: i === 0 },
+                        ...(logScale ? { min: 1 } : {})
+                    });
+                }
+
                 const option: any = {
                     tooltip: {
                         trigger: type === 'pie' ? 'item' : 'axis',
@@ -366,21 +462,20 @@ export function activate(ctx: any) {
                     legend: {
                         type: 'scroll',
                         bottom: 0,
-                        data: sortedDatasets.map((d: any) => d.label)
+                        data: sortedSeries.map((d: any) => d.label)
                     },
-                    grid: { left: '3%', right: '4%', bottom: '10%', containLabel: true },
+                    grid: { left: '3%', right: separateAxes && numYAxes > 1 ? `${4 + Math.floor((numYAxes - 1) / 2) * 6}%` : '4%', bottom: '10%', containLabel: true },
                     xAxis: {} as any,
-                    yAxis: {} as any,
+                    yAxis: numYAxes === 1 ? yAxesArr[0] : yAxesArr,
                     series: [] as any[]
                 };
 
-                const valAxis = { type: 'value', name: yCol, axisLabel: { formatter: valFormatter } };
                 const catAxis = { type: 'category', data: sortedLabels, name: xCol };
 
                 if (type === 'pie') {
                     option.xAxis = { show: false };
                     option.yAxis = { show: false };
-                    const ds = sortedDatasets[0];
+                    const ds = sortedSeries[0];
                     if (ds) {
                         option.series = [{
                             name: ds.label,
@@ -393,25 +488,25 @@ export function activate(ctx: any) {
                     }
                 } else if (type === 'scatter') {
                     option.xAxis = catAxis;
-                    option.yAxis = valAxis;
-                    option.series = sortedDatasets.map((ds: any) => ({
-                        name: ds.label, type: 'scatter', symbolSize: 10, data: ds.values
+                    option.series = sortedSeries.map((ds: any) => ({
+                        name: ds.label, type: 'scatter', symbolSize: 10, data: ds.values,
+                        yAxisIndex: separateAxes ? ds.yAxisIdx : 0
                     }));
                 } else {
                     const isHBar = type === 'hbar';
                     const eType = type === 'line' ? 'line' : 'bar';
                     if (isHBar) {
-                        option.xAxis = { type: 'value', name: yCol, axisLabel: { formatter: valFormatter } };
+                        option.xAxis = { type: axisType, name: yCol, axisLabel: { formatter: valFormatter }, ...(logScale ? { min: 1 } : {}) };
                         option.yAxis = { type: 'category', data: sortedLabels, inverse: true, name: xCol };
                     } else {
                         option.xAxis = catAxis;
-                        option.yAxis = valAxis;
                     }
-                    option.series = sortedDatasets.map((ds: any) => ({
+                    option.series = sortedSeries.map((ds: any) => ({
                         name: ds.label, type: eType, data: ds.values,
                         smooth: type === 'line',
                         areaStyle: type === 'line' ? { opacity: 0.1 } : undefined,
-                        itemStyle: { borderRadius: type === 'bar' ? [4, 4, 0, 0] : (isHBar ? [0, 4, 4, 0] : 0) }
+                        itemStyle: { borderRadius: type === 'bar' ? [4, 4, 0, 0] : (isHBar ? [0, 4, 4, 0] : 0) },
+                        yAxisIndex: (!isHBar && separateAxes) ? ds.yAxisIdx : 0
                     }));
                 }
 
@@ -470,7 +565,10 @@ export function activate(ctx: any) {
                     color: $('color')?.value,
                     agg: $('agg')?.value,
                     sortBy: $('sort-by')?.value,
-                    sortDir: $('sort-dir')?.value
+                    sortDir: $('sort-dir')?.value,
+                    extraYCols: getExtraYCols(),
+                    separateAxes: $('separate-axes')?.checked || false,
+                    logScale: $('log-scale')?.checked || false
                 });
             }
 
@@ -487,8 +585,16 @@ export function activate(ctx: any) {
                 runBtn.addEventListener('mouseout', () => { runBtn.style.background = '#4f46e5'; });
             }
 
-            // Chart type, Sort By, Sort Direction → client-side only, re-render from cache
+            // Add Y axis button
+            const addYBtn = $('add-y');
+            if (addYBtn) addYBtn.addEventListener('click', () => { addExtraYRow(); saveState(); });
+
+            // Chart type, Sort By, Sort Direction, Separate Axes, Log Scale → client-side re-render
             ['type', 'sort-by', 'sort-dir'].forEach((id: string) => {
+                const el = $(id);
+                if (el) el.addEventListener('change', () => { rerenderFromCache(); saveState(); });
+            });
+            ['separate-axes', 'log-scale'].forEach((id: string) => {
                 const el = $(id);
                 if (el) el.addEventListener('change', () => { rerenderFromCache(); saveState(); });
             });

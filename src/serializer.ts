@@ -12,7 +12,7 @@ import * as vscode from 'vscode';
  */
 
 interface RawCell {
-  type: 'markdown' | 'sql' | 'chart';
+  type: 'markdown' | 'sql' | 'chart' | 'summary' | 'schema';
   content: string;
 }
 
@@ -48,6 +48,12 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
       if (cell.type === 'chart') {
         return new vscode.NotebookCellData(vscode.NotebookCellKind.Code, cell.content, 'chart');
       }
+      if (cell.type === 'summary') {
+        return new vscode.NotebookCellData(vscode.NotebookCellKind.Code, cell.content, 'summary');
+      }
+      if (cell.type === 'schema') {
+        return new vscode.NotebookCellData(vscode.NotebookCellKind.Code, cell.content, 'schema');
+      }
       return new vscode.NotebookCellData(vscode.NotebookCellKind.Code, cell.content, 'sql');
     });
 
@@ -65,6 +71,12 @@ export class SqlNotebookSerializer implements vscode.NotebookSerializer {
         }
         if (cell.languageId === 'chart') {
           return { type: 'chart' as const, content: cell.value };
+        }
+        if (cell.languageId === 'summary') {
+          return { type: 'summary' as const, content: cell.value };
+        }
+        if (cell.languageId === 'schema') {
+          return { type: 'schema' as const, content: cell.value };
         }
         return { type: 'sql' as const, content: cell.value };
       }),

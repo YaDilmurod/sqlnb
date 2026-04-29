@@ -13,7 +13,7 @@ interface SchemaColumn {
     columnDefault: string | null; ordinalPosition: number;
     maxLength: number | null; numericPrecision: number | null; isPrimaryKey: boolean;
 }
-interface SchemaTable { schema: string; name: string; columns: SchemaColumn[]; }
+interface SchemaTable { schema: string; name: string; tableType: 'table' | 'view' | 'materialized_view'; columns: SchemaColumn[]; }
 
 // Categorize SQL type using regex patterns — no exhaustive lists needed.
 // This handles Postgres, DuckDB, MySQL, SQLite, and any future type names.
@@ -131,11 +131,23 @@ export function activate(ctx: any) {
 
   /* Column header row */
   .sc-header { display:flex; align-items:center; gap:0; padding:4px 16px 4px 58px; border-bottom:1px solid #e5e7eb; background:#fafbfc; font-size:11px; font-weight:600; color:#888; text-transform:uppercase; letter-spacing:0.3px; }
+
+  /* Type filter toggles */
+  .sch-filters { display:flex; gap:4px; align-items:center; }
+  .sch-filter-btn { padding:3px 10px; border:1px solid #d1d5db; border-radius:12px; background:#fff; cursor:pointer; font-size:11px; font-weight:600; color:#6b7280; transition:all .15s; user-select:none; }
+  .sch-filter-btn:hover { background:#f3f4f6; border-color:#9ca3af; }
+  .sch-filter-btn.active { background:#4f46e5; color:#fff; border-color:#4f46e5; }
+  .sch-filter-btn.active:hover { background:#4338ca; }
 </style>
 <div class="sch-root" id="${vizId}-root">
   <div class="sch-toolbar">
     <h4>🗄️ Database Schema</h4>
     <input class="sch-search" id="${vizId}-search" placeholder="Filter tables & columns…" autocomplete="off" />
+    <div class="sch-filters">
+      <button class="sch-filter-btn active" id="${vizId}-filter-table" data-type="table">📄 Tables</button>
+      <button class="sch-filter-btn active" id="${vizId}-filter-view" data-type="view">👁 Views</button>
+      <button class="sch-filter-btn active" id="${vizId}-filter-matview" data-type="materialized_view">🧊 Mat. Views</button>
+    </div>
     <button class="sch-btn" id="${vizId}-collapse-all" title="Collapse all">↕ Toggle All</button>
     <button class="sch-btn sch-btn-primary" id="${vizId}-refresh" title="Reload schema from database">↻ Refresh</button>
     <span id="${vizId}-status" style="font-size:11px;color:#888;"></span>
@@ -152,6 +164,7 @@ export function activate(ctx: any) {
             let expandedSchemas: Set<string> = new Set();
             let expandedTables: Set<string> = new Set();
             let allExpanded = false;
+            let visibleTypes: Set<string> = new Set(['table', 'view', 'materialized_view']);
 
             // ── Copy to clipboard with toast ──
             function copyText(text: string, label: string) {
@@ -191,6 +204,9 @@ export function activate(ctx: any) {
                 // Group by schema
                 const schemas = new Map<string, SchemaTable[]>();
                 for (const table of allTables) {
+                    // Type filter
+                    if (!visibleTypes.has(table.tableType)) continue;
+
                     const matchesTable = !lowerFilter || table.name.toLowerCase().includes(lowerFilter) || table.schema.toLowerCase().includes(lowerFilter);
                     const matchingCols = lowerFilter ? table.columns.filter(c => c.name.toLowerCase().includes(lowerFilter) || c.dataType.toLowerCase().includes(lowerFilter)) : table.columns;
 
@@ -226,9 +242,11 @@ export function activate(ctx: any) {
                             html += `<div class="st" data-tkey="${esc(tKey)}">`;
                             html += `<div class="st-header" data-tkey="${esc(tKey)}">`;
                             html += `<span class="st-toggle">${tableExpanded ? '▼' : '▶'}</span>`;
-                            html += `<span class="st-icon">📄</span>`;
+                            const tIcon = table.tableType === 'view' ? '👁' : table.tableType === 'materialized_view' ? '🧊' : '📄';
+                            html += `<span class="st-icon">${tIcon}</span>`;
+                            const tLabel = table.tableType === 'view' ? 'view' : table.tableType === 'materialized_view' ? 'mat. view' : '';
                             html += `<span class="st-name">${esc(table.name)}</span>`;
-                            html += `<span class="st-colcount">(${table.columns.length} col${table.columns.length !== 1 ? 's' : ''}${pkCols.length > 0 ? ', ' + pkCols.length + ' pk' : ''})</span>`;
+                            html += `<span class="st-colcount">${tLabel ? '<span style="color:#6366f1;font-weight:600;font-size:10px;text-transform:uppercase;margin-right:4px;">' + tLabel + '</span>' : ''}(${table.columns.length} col${table.columns.length !== 1 ? 's' : ''}${pkCols.length > 0 ? ', ' + pkCols.length + ' pk' : ''})</span>`;
                             html += `<span class="st-actions">`;
                             html += `<button class="st-act" data-copy-name="${esc(qName)}" title="Copy table name">📋 Name</button>`;
                             html += `<button class="st-act" data-copy-select="${esc(qName)}" title="Copy SELECT query">📝 SELECT</button>`;
@@ -349,18 +367,18 @@ export function activate(ctx: any) {
                         allTables = msg.tables || [];
                         const elapsed = msg.elapsedMs ? (msg.elapsedMs < 1000 ? `${msg.elapsedMs.toFixed(0)}ms` : `${(msg.elapsedMs / 1000).toFixed(2)}s`) : '';
 
-                        if (statusEl) statusEl.innerHTML = `<span style="color:#16a34a;">✅ ${allTables.length} table${allTables.length !== 1 ? 's' : ''} · ${elapsed}</span>`;
+                        const nTables = allTables.filter((t: any) => t.tableType === 'table').length;
+                        const nViews = allTables.filter((t: any) => t.tableType === 'view').length;
+                        const nMatViews = allTables.filter((t: any) => t.tableType === 'materialized_view').length;
+                        const parts = [];
+                        if (nTables > 0) parts.push(`${nTables} table${nTables !== 1 ? 's' : ''}`);
+                        if (nViews > 0) parts.push(`${nViews} view${nViews !== 1 ? 's' : ''}`);
+                        if (nMatViews > 0) parts.push(`${nMatViews} mat. view${nMatViews !== 1 ? 's' : ''}`);
+                        if (statusEl) statusEl.innerHTML = `<span style="color:#16a34a;">✅ ${parts.join(' · ')} · ${elapsed}</span>`;
 
-                        // Auto-expand the first schema (and first table if ≤ 5 tables)
+                        // Keep all schemas collapsed by default
                         expandedSchemas.clear();
                         expandedTables.clear();
-                        const schemaNames = [...new Set(allTables.map(t => t.schema))];
-                        if (schemaNames.length > 0) expandedSchemas.add(schemaNames[0]);
-                        // If only a few tables, auto-expand the first one
-                        const firstSchemaTables = allTables.filter(t => t.schema === schemaNames[0]);
-                        if (firstSchemaTables.length <= 8 && firstSchemaTables.length > 0) {
-                            expandedTables.add(`${firstSchemaTables[0].schema}.${firstSchemaTables[0].name}`);
-                        }
 
                         render();
                     }
@@ -401,6 +419,24 @@ export function activate(ctx: any) {
                     render(($('search') as any)?.value || '');
                 });
             }
+
+            // ── Type filter toggles ──
+            ['filter-table', 'filter-view', 'filter-matview'].forEach((btnId: string) => {
+                const btn = $(btnId);
+                if (btn) {
+                    btn.addEventListener('click', () => {
+                        const type = btn.getAttribute('data-type');
+                        if (visibleTypes.has(type)) {
+                            visibleTypes.delete(type);
+                            btn.classList.remove('active');
+                        } else {
+                            visibleTypes.add(type);
+                            btn.classList.add('active');
+                        }
+                        render(($('search') as any)?.value || '');
+                    });
+                }
+            });
 
             // Auto-load on render
             requestSchema();

@@ -45,7 +45,7 @@ export class ControllerManager {
     this.disposables.push(this.chartMessaging.onDidReceiveMessage(async (e) => {
       const msg = e.message;
       if (msg.type === 'chart-aggregate') {
-        const { requestId, datasetKey, xCol, yCol, colorCol, aggFn } = msg;
+        const { requestId, datasetKey, xCol, yCol, colorCol, aggFn, extraYCols } = msg;
 
         let ctrl: SqlNotebookController | undefined;
         for (const c of this.controllers.values()) {
@@ -70,7 +70,7 @@ export class ControllerManager {
         }
 
         const result = await ctrl.executeChartAggregation(
-          datasetKey, xCol, yCol, aggFn, colorCol || undefined
+          datasetKey, xCol, yCol, aggFn, colorCol || undefined, extraYCols || undefined
         );
 
         this.chartMessaging.postMessage({
