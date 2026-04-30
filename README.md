@@ -17,15 +17,16 @@ Install → Connect → Create → Query → Visualize
 **1. Install**
 Search for **"SQL Notebook EDA"** in VS Code Extensions, or install the `.vsix` from the [releases](https://github.com/YaDilmurod/sqlnb/releases).
 
-**2. Connect to a Database**
+**2. Create a `.sqlnb` File**
+Create a new file with the **`.sqlnb`** extension (e.g. `analysis.sqlnb`). This is the only file format the extension works with.
+You can also run `Cmd+Shift+P` → `SQL Notebook: New Notebook`.
+
+> New notebooks auto-include a **Schema Browser** at the top so you can explore tables, views, and materialized views right away.
+
+**3. Connect to a Database**
 `Cmd+Shift+P` → `SQL Notebook: Connect to Database` → paste your connection string.
 
 > Supports **PostgreSQL** (`postgres://...`) and **DuckDB** (local `.duckdb` files).
-
-**3. Create a Notebook**
-`Cmd+Shift+P` → `SQL Notebook: New Notebook` — or simply create a `.sqlnb` file.
-
-> New notebooks auto-include a **Schema Browser** at the top so you can explore tables, views, and materialized views right away.
 
 **4. Write & Run SQL**
 Write SQL in any code cell and hit **▶ Run**. Results appear as a sortable, paginated table.
