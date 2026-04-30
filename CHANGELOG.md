@@ -2,6 +2,11 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.0.58]
+- **Docs:** Rewrote README with a clear getting-started flow, concise feature table, and proper structure.
+- **Feature:** Schema browser now has **type filter toggles** (📄 Tables / 👁 Views / 🧊 Mat. Views) to show/hide entity types independently.
+- **Feature:** Schema status bar shows per-type counts (e.g. "12 tables · 3 views · 1 mat. view").
+
 ## [0.0.57]
 
 ### Schema Browser
