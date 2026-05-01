@@ -8,6 +8,7 @@ export class ControllerManager {
   private chartMessaging = vscode.notebooks.createRendererMessaging('sqlnb-chart-renderer');
   private summaryMessaging = vscode.notebooks.createRendererMessaging('sqlnb-summary-renderer');
   private schemaMessaging = vscode.notebooks.createRendererMessaging('sqlnb-schema-renderer');
+  private connectionMessaging = vscode.notebooks.createRendererMessaging('sqlnb-connection-renderer');
   private disposables: vscode.Disposable[] = [];
 
   constructor(private updateStatusBar: (ctrl: SqlNotebookController | undefined) => void) {
@@ -157,6 +158,59 @@ export class ControllerManager {
           elapsedMs: result.elapsedMs,
           error: result.error
         });
+      }
+    }));
+
+    // ── Connection renderer messaging ──
+    this.disposables.push(this.connectionMessaging.onDidReceiveMessage(async (e) => {
+      const msg = e.message;
+
+      if (msg.type === 'connection-list') {
+        const connections = Array.from(this.controllers.entries()).map(([id, ctrl]) => ({
+          id,
+          name: ctrl.label,
+          type: ctrl.driverType,
+          connected: ctrl.isConnected
+        }));
+
+        let activeId: string | undefined;
+        const editor = vscode.window.activeNotebookEditor;
+        if (editor) {
+          const activeCtrl = this.activeNotebookControllers.get(editor.notebook.uri.toString());
+          if (activeCtrl) {
+            for (const [id, ctrl] of this.controllers.entries()) {
+              if (ctrl === activeCtrl) { activeId = id; break; }
+            }
+          }
+        }
+
+        this.connectionMessaging.postMessage({
+          type: 'connection-list-result',
+          connections,
+          activeId
+        });
+      }
+
+      if (msg.type === 'connection-select') {
+        const ctrl = this.controllers.get(msg.connectionId);
+        if (!ctrl) {
+          this.connectionMessaging.postMessage({
+            type: 'connection-select-result',
+            error: 'Connection not found'
+          });
+          return;
+        }
+
+        // Open the kernel picker so user can select this kernel
+        vscode.commands.executeCommand('notebook.selectKernel');
+        this.connectionMessaging.postMessage({
+          type: 'connection-select-result',
+          success: true
+        });
+      }
+
+      if (msg.type === 'connection-add') {
+        vscode.commands.executeCommand('sqlNotebook.connect');
       }
     }));
 

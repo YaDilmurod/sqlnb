@@ -1,4 +1,6 @@
+import { StatusBadge } from './components/StatusBadge';
 declare var acquireNotebookRendererApi: any;
+
 declare var document: any;
 declare var window: any;
 declare function fetch(url: string, init?: any): Promise<any>;
@@ -60,6 +62,7 @@ export function activate(ctx: any) {
             const DATASETS = datasets;
             let currentDatasetIdx = 0;
             let pendingRequestId = 0;
+            let statusBadge: StatusBadge | null = null;
 
             function inferTypes(sampleRows: any[], columns: string[]): Record<string, 'numeric'|'date'|'string'> {
                 const types: Record<string, 'numeric'|'date'|'string'> = {};
@@ -101,7 +104,16 @@ export function activate(ctx: any) {
                 pendingRequestId++;
                 const requestId = pendingRequestId;
 
-                if (statusEl) statusEl.innerHTML = '<span style="color:#4f46e5;">⏳ Computing server-side statistics...</span>';
+                if (!statusBadge) {
+                    const statusEl = $('status');
+                    if (statusEl) {
+                        statusEl.innerHTML = '';
+                        statusBadge = new StatusBadge(vizId + '-status');
+                    }
+                }
+                if (statusBadge) {
+                    statusBadge.startLoading('Computing server-side statistics...');
+                }
 
                 if (ctx.postMessage) {
                     ctx.postMessage({
@@ -236,17 +248,15 @@ export function activate(ctx: any) {
             if (ctx.onDidReceiveMessage) {
                 ctx.onDidReceiveMessage((msg: any) => {
                     if (msg.type === 'summary-aggregate-result' && msg.requestId === pendingRequestId) {
-                        const statusEl = $('status');
                         if (msg.error) {
-                            if (statusEl) statusEl.innerHTML = `<span style="color:#dc2626;">❌ ${esc(msg.error)}</span>`;
+                            if (statusBadge) statusBadge.setError(msg.error);
                             return;
                         }
-                        const elapsed = msg.elapsedMs ? (msg.elapsedMs < 1000 ? `${msg.elapsedMs.toFixed(0)}ms` : `${(msg.elapsedMs / 1000).toFixed(2)}s`) : '';
                         
                         const row = msg.rows && msg.rows.length > 0 ? msg.rows[0] : {};
                         const totalRows = Number(row['_sqlnb_total_rows'] || 0);
 
-                        if (statusEl) statusEl.innerHTML = `<span style="color:#16a34a;">✅ Analyzed ${totalRows.toLocaleString()} rows · ${elapsed}</span>`;
+                        if (statusBadge) statusBadge.setSuccess(`Analyzed ${totalRows.toLocaleString()} rows`, msg.elapsedMs);
                         renderTable(row, msg.columnTypes, totalRows);
                     }
                 });
@@ -260,7 +270,10 @@ export function activate(ctx: any) {
                     const contentEl = $('content');
                     if (contentEl) contentEl.innerHTML = '<div style="color:#888; font-size:13px;">Click "Run Data Profile" to compute statistics.</div>';
                     const statusEl = $('status');
-                    if (statusEl) statusEl.innerHTML = '';
+                    if (statusEl) {
+                        statusEl.innerHTML = '';
+                        statusBadge = null;
+                    }
                 });
             }
 

@@ -2,8 +2,8 @@ import * as vscode from 'vscode';
 import { SqlNotebookSerializer } from './serializer';
 import { ControllerManager } from './manager';
 import { SqlNotebookController } from './controller';
-import { buildChartPayload } from './chart-engine';
-import { buildSummaryPayload } from './summary-engine';
+import { buildChartPayload } from '../engines/chart-engine';
+import { buildSummaryPayload } from '../engines/summary-engine';
 import {
   initTelemetry,
   trackActivation,
@@ -279,6 +279,13 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('sqlNotebook.newNotebook', async () => {
+      const connectionCell = new vscode.NotebookCellData(
+          vscode.NotebookCellKind.Code,
+          '-- Connection Selector',
+          'connection'
+        );
+      connectionCell.metadata = { inputCollapsed: true };
+
       const schemaCell = new vscode.NotebookCellData(
           vscode.NotebookCellKind.Code,
           '-- Database Schema Browser',
@@ -287,9 +294,10 @@ export async function activate(context: vscode.ExtensionContext) {
       schemaCell.metadata = { inputCollapsed: true };
 
       const cells = [
+        connectionCell,
         new vscode.NotebookCellData(
           vscode.NotebookCellKind.Markup,
-          `# Welcome to SQL Notebook\n\n### 🔌 Getting Started\n1. Select your engine from the **Kernel Picker** (top right):\n   - **$(folder) Local Files (DuckDB)** — Query CSV/Excel files directly, no server needed.\n   - **$(database) PostgreSQL** — Connect to a PostgreSQL database.\n2. Need to add a PostgreSQL connection? Open the command palette:\n   - **Mac:** \`Cmd + Shift + P\`\n   - **Windows/Linux:** \`Ctrl + Shift + P\`\n   - Search for **"SQL Notebook: Connect to Database"** and select **Add New Connection...**.\n\n### 📁 Query Local Files (DuckDB)\nSelect the **Local Files (DuckDB)** kernel, then query your workspace files:\n\`\`\`sql\n-- CSV files\nSELECT * FROM 'data/sales.csv';\n\n-- Excel files\nSELECT * FROM st_read('data/report.xlsx', layer='Sheet1');\n\`\`\`\n\n### 🐘 PostgreSQL Connection String\n\`postgresql://username:password@localhost:5432/dbname\``,
+          `# Welcome to SQL Notebook\n\n### $(plug) Getting Started\n1. Select your engine from the **Kernel Picker** (top right):\n   - **$(folder) Local Files (DuckDB)** — Query CSV/Excel files directly, no server needed.\n   - **$(database) PostgreSQL** — Connect to a PostgreSQL database.\n2. Need to add a PostgreSQL connection? Open the command palette:\n   - **Mac:** \`Cmd + Shift + P\`\n   - **Windows/Linux:** \`Ctrl + Shift + P\`\n   - Search for **"SQL Notebook: Connect to Database"** and select **Add New Connection...**.\n\n### $(file-directory) Query Local Files (DuckDB)\nSelect the **Local Files (DuckDB)** kernel, then query your workspace files:\n\`\`\`sql\n-- CSV files\nSELECT * FROM 'data/sales.csv';\n\n-- Excel files\nSELECT * FROM st_read('data/report.xlsx', layer='Sheet1');\n\`\`\`\n\n### $(database) PostgreSQL Connection String\n\`postgresql://username:password@localhost:5432/dbname\``,
           'markdown'
         ),
         schemaCell,

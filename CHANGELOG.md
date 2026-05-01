@@ -2,6 +2,15 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.0.60]
+- **Fix:** Resolved janky/broken spinner animation in the StatusBadge loading indicator. The SVG spinner was being destroyed and recreated every 100ms (via innerHTML), restarting the CSS animation on every tick. Now the SVG is created once as a real DOM node and only the elapsed-time text is updated.
+- **Fix:** Fixed timer leak in StatusBadge — calling `startLoading()` multiple times (e.g., clicking "Run Chart" rapidly) no longer leaks `setInterval` timers.
+- **Fix:** Chart loading overlay ("Aggregating data on server...") no longer appears immediately on cell render. It now starts hidden and only shows when "Run Chart" is clicked.
+- **Fix:** Fixed template literal syntax error in chart-renderer (`sel.style.cssText` was using single quotes instead of backticks, preventing CSS injection for Extra Y Axis dropdowns).
+- **Infra:** Added Jest + ts-jest testing framework with `npm run test` script.
+- **Infra:** Added comprehensive unit tests for all engine modules (schema-engine, chart-engine, summary-engine).
+- **Infra:** Fixed TypeScript `rootDir` error by adding `"include": ["src"]` and excluding `test/` from tsconfig.json.
+
 ## [0.0.58]
 - **Docs:** Rewrote README with a clear getting-started flow, concise feature table, and proper structure.
 - **Feature:** Schema browser now has **type filter toggles** (📄 Tables / 👁 Views / 🧊 Mat. Views) to show/hide entity types independently.

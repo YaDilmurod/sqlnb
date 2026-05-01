@@ -1,17 +1,17 @@
 import * as vscode from 'vscode';
-import { IDatabaseDriver } from './drivers/types';
-import { PostgresDriver } from './drivers/postgres';
-import { DuckDbDriver } from './drivers/duckdb';
-import { StoredResult, buildChartPayload, buildAggregationQuery } from './chart-engine';
-import { buildSummaryPayload, buildSummaryQuery } from './summary-engine';
-import { buildSchemaQuery, parseSchemaRows, SchemaTable } from './schema-engine';
+import { IDatabaseDriver } from '../drivers/types';
+import { PostgresDriver } from '../drivers/postgres';
+import { DuckDbDriver } from '../drivers/duckdb';
+import { StoredResult, buildChartPayload, buildAggregationQuery } from '../engines/chart-engine';
+import { buildSummaryPayload, buildSummaryQuery } from '../engines/summary-engine';
+import { buildSchemaQuery, parseSchemaRows, SchemaTable } from '../engines/schema-engine';
 import { trackQueryRun, getTelemetryContext } from './telemetry';
 
 export type DriverType = 'postgres' | 'duckdb';
 
 export class SqlNotebookController {
   private readonly _notebookType = 'sql-notebook';
-  private readonly _supportedLanguages = ['sql', 'chart', 'summary', 'schema'];
+  private readonly _supportedLanguages = ['sql', 'chart', 'summary', 'schema', 'connection'];
 
   private _controller: vscode.NotebookController;
   private _driver: IDatabaseDriver | null = null;
@@ -279,6 +279,17 @@ export class SqlNotebookController {
       return;
     }
 
+    if (cell.document.languageId === 'connection') {
+      const payload = { cellId: cell.document.uri.toString() };
+      execution.replaceOutput([
+        new vscode.NotebookCellOutput([
+          vscode.NotebookCellOutputItem.json(payload, 'application/vnd.sqlnb.connection'),
+        ]),
+      ]);
+      execution.end(true, Date.now());
+      return;
+    }
+
     let query = cell.document.getText().trim();
     if (!query) {
       execution.replaceOutput([new vscode.NotebookCellOutput([vscode.NotebookCellOutputItem.text('Empty query — nothing to execute.', 'text/plain')])]);
@@ -330,7 +341,7 @@ export class SqlNotebookController {
         if (msg.includes('canceling statement due to user request') || msg.includes('INTERRUPT')) {
            execution.replaceOutput([
              new vscode.NotebookCellOutput([
-               vscode.NotebookCellOutputItem.text('🛑 Query cancelled by user.', 'text/plain'),
+               vscode.NotebookCellOutputItem.text('Query cancelled by user.', 'text/plain'),
              ]),
            ]);
            execution.end(false, Date.now());
@@ -394,7 +405,7 @@ export class SqlNotebookController {
     const elapsed = elapsedMs < 1000 ? `${elapsedMs.toFixed(1)}ms` : `${(elapsedMs / 1000).toFixed(2)}s`;
     return `
       <div style="font-family:system-ui;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:4px;color:#166534;font-size:13px;">
-        <strong>✓ ${this._escapeHtml(command)}</strong> completed
+        <strong><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:text-bottom;margin-right:4px;"><polyline points="20 6 9 17 4 12"></polyline></svg> ${this._escapeHtml(command)}</strong> completed
         <span style="color:#888;margin-left:8px;">${rowCount} row${rowCount !== 1 ? 's' : ''} affected · ${elapsed}</span>
       </div>
     `;
@@ -403,7 +414,7 @@ export class SqlNotebookController {
   private _renderError(message: string): string {
     return `
       <div style="font-family:system-ui;padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:4px;color:#991b1b;font-size:13px;">
-        <strong>✗ Error</strong>
+        <strong><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:text-bottom;margin-right:4px;"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg> Error</strong>
         <pre style="margin:6px 0 0;white-space:pre-wrap;font-size:12px;">${this._escapeHtml(message)}</pre>
       </div>
     `;

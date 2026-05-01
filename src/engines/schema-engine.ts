@@ -21,6 +21,7 @@ export interface SchemaTable {
   name: string;
   tableType: 'table' | 'view' | 'materialized_view';
   columns: SchemaColumn[];
+  sizeBytes: number | null;
 }
 
 export function buildSchemaQuery(driverType: 'postgres' | 'duckdb' = 'postgres'): string {
@@ -37,7 +38,8 @@ export function buildSchemaQuery(driverType: 'postgres' | 'duckdb' = 'postgres')
   c.ordinal_position,
   c.character_maximum_length,
   c.numeric_precision,
-  false AS is_primary_key
+  false AS is_primary_key,
+  NULL AS table_size_bytes
 FROM information_schema.columns c
 JOIN information_schema.tables t
   ON c.table_name = t.table_name AND c.table_schema = t.table_schema
@@ -61,7 +63,10 @@ ORDER BY c.table_schema, c.table_name, c.ordinal_position`;
   c.ordinal_position,
   c.character_maximum_length,
   c.numeric_precision,
-  CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_primary_key
+  CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_primary_key,
+  CASE WHEN t.table_type = 'BASE TABLE' THEN
+    pg_total_relation_size(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))
+  ELSE 0 END AS table_size_bytes
 FROM information_schema.columns c
 JOIN information_schema.tables t
   ON c.table_name = t.table_name AND c.table_schema = t.table_schema
@@ -91,7 +96,8 @@ SELECT
   a.attnum AS ordinal_position,
   CASE WHEN a.atttypmod > 0 AND t.typname IN ('varchar','bpchar') THEN a.atttypmod - 4 ELSE NULL END AS character_maximum_length,
   CASE WHEN t.typname IN ('numeric','decimal') THEN ((a.atttypmod - 4) >> 16) & 65535 ELSE NULL END AS numeric_precision,
-  false AS is_primary_key
+  false AS is_primary_key,
+  pg_total_relation_size(cls.oid) AS table_size_bytes
 FROM pg_catalog.pg_matviews mv
 JOIN pg_catalog.pg_class cls ON cls.relname = mv.matviewname
   AND cls.relnamespace = (SELECT oid FROM pg_catalog.pg_namespace WHERE nspname = mv.schemaname)
@@ -121,7 +127,10 @@ export function parseSchemaRows(rows: Record<string, any>[]): SchemaTable[] {
       } else if (rawType === 'VIEW') {
         tableType = 'view';
       }
-      tableMap.set(key, { schema, name: table, tableType, columns: [] });
+      tableMap.set(key, { schema, name: table, tableType, columns: [], sizeBytes: null });
+      if (row.table_size_bytes != null) {
+        tableMap.get(key)!.sizeBytes = Number(row.table_size_bytes);
+      }
     }
 
     // isPrimaryKey: handle boolean true, string 't'/'true'/'1', or numeric 1

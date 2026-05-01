@@ -1,5 +1,7 @@
+import { StatusBadge } from './components/StatusBadge';
 // SQLNB Chart Renderer - interactive ECharts with server-side aggregation
 // Communicates with the extension host to push GROUP BY queries to PostgreSQL
+
 
 declare var acquireNotebookRendererApi: any;
 declare var document: any;
@@ -76,7 +78,7 @@ export function activate(ctx: any) {
               }
             </style>
             <div style="font-family:system-ui,sans-serif; display:flex; gap:20px; align-items:stretch; box-sizing:border-box; width:100%; overflow:hidden;" id="${vizId}-root">
-              <div style="flex:0 0 240px; display:flex; flex-direction:column; gap:12px; background:#f9f9f9; padding:16px; border-radius:6px; border:1px solid #ddd; max-height:600px; overflow-y:auto;">
+              <div style="flex:0 0 240px; display:flex; flex-direction:column; gap:12px; background:#f9f9f9; padding:16px; border-radius:6px; border:1px solid #ddd;">
                 <h4 style="margin:0 0 4px 0; color:#333; font-size:14px;">Chart Settings</h4>
                 <label style="${ls}">Dataset
                   <select id="${vizId}-ds" style="${ss};font-weight:600;">${dsOptions}</select>
@@ -145,7 +147,7 @@ export function activate(ctx: any) {
               <div style="flex:1; min-width:0; display:flex; flex-direction:column; box-sizing:border-box; overflow:hidden;">
                 <div id="${vizId}-chart-wrapper" style="position:relative; flex:1; min-height:400px;">
                   <div id="${vizId}-chart" style="border:1px solid #ddd;border-radius:6px;padding:12px;background:#fff; position:absolute; top:0;left:0;right:0;bottom:0; display:flex; align-items:center; justify-content:center; box-sizing:border-box;"></div>
-                  <div id="${vizId}-loading" class="sqlnb-loading-overlay">
+                  <div id="${vizId}-loading" class="sqlnb-loading-overlay" style="display:none;">
                     <div class="sqlnb-spinner"></div>
                     <div class="sqlnb-loading-text">Aggregating data on server...</div>
                     <div class="sqlnb-progress-bar"><div class="sqlnb-progress-fill"></div></div>
@@ -159,6 +161,7 @@ export function activate(ctx: any) {
             let currentDatasetIdx = 0;
             let myChart: any = null;
             let pendingRequestId = 0;
+            let statusBadge: StatusBadge | null = null;
             let lastAggRows: any[] | null = null;
 
             function $(id: string): any { return document.getElementById(vizId + '-' + id); }
@@ -202,7 +205,7 @@ export function activate(ctx: any) {
                 const row = document.createElement('div');
                 row.style.cssText = 'display:flex;gap:4px;align-items:center;';
                 const sel = document.createElement('select');
-                sel.style.cssText = '${ss}flex:1;';
+                sel.style.cssText = `${ss}flex:1;`;
                 let html = '<option value="">None</option>';
                 const sorted = ds.columns.slice().sort((a: string, b: string) => a.toLowerCase().localeCompare(b.toLowerCase()));
                 sorted.forEach((c: string) => { html += '<option value="' + esc(c) + '">' + esc(c) + '</option>'; });
@@ -210,7 +213,7 @@ export function activate(ctx: any) {
                 if (value) sel.value = value;
                 sel.addEventListener('change', () => { saveState(); });
                 const removeBtn = document.createElement('button');
-                removeBtn.textContent = '✕';
+                removeBtn.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>';
                 removeBtn.style.cssText = 'padding:2px 6px;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;border-radius:4px;cursor:pointer;font-size:11px;';
                 removeBtn.addEventListener('click', () => { row.remove(); saveState(); });
                 row.appendChild(sel);
@@ -271,9 +274,15 @@ export function activate(ctx: any) {
                 const xCol = $('x')?.value || '';
                 const yCol = $('y')?.value || '';
                 
-                const statusEl = $('status');
+                if (!statusBadge) {
+                    const statusEl = $('status');
+                    if (statusEl) {
+                        statusEl.innerHTML = '';
+                        statusBadge = new StatusBadge(vizId + '-status');
+                    }
+                }
                 if (!xCol || !yCol) {
-                    if (statusEl) statusEl.innerHTML = '<span style="color:#d97706;">⚠️ Please select both X and Y axis.</span>';
+                    if (statusBadge) statusBadge.setInfo('Please select both X and Y axis.');
                     return;
                 }
 
@@ -285,7 +294,7 @@ export function activate(ctx: any) {
                 pendingRequestId++;
                 const requestId = pendingRequestId;
 
-                if (statusEl) statusEl.innerHTML = '<span style="color:#4f46e5;">⏳ Querying database...</span>';
+                if (statusBadge) statusBadge.startLoading('Querying database...');
                 showLoading('Aggregating data on server...');
 
                 if (ctx.postMessage) {
@@ -298,7 +307,7 @@ export function activate(ctx: any) {
                     });
                 } else {
                     hideLoading();
-                    if (statusEl) statusEl.textContent = '⚠️ Messaging unavailable. Cannot run server-side aggregation.';
+                    if (statusBadge) statusBadge.setError('Messaging unavailable. Cannot run server-side aggregation.');
                 }
             }
 
@@ -539,15 +548,13 @@ export function activate(ctx: any) {
             if (ctx.onDidReceiveMessage) {
                 ctx.onDidReceiveMessage((msg: any) => {
                     if (msg.type === 'chart-aggregate-result' && msg.requestId === pendingRequestId) {
-                        const statusEl = $('status');
                         if (msg.error) {
                             hideLoading();
-                            if (statusEl) statusEl.innerHTML = `<span style="color:#dc2626;">❌ ${esc(msg.error)}</span>`;
+                            if (statusBadge) statusBadge.setError(msg.error);
                             return;
                         }
                         const rowCount = msg.rows ? msg.rows.length : 0;
-                        const elapsed = msg.elapsedMs ? (msg.elapsedMs < 1000 ? `${msg.elapsedMs.toFixed(0)}ms` : `${(msg.elapsedMs / 1000).toFixed(2)}s`) : '';
-                        if (statusEl) statusEl.innerHTML = `<span style="color:#16a34a;">✅ ${rowCount.toLocaleString()} groups · ${elapsed}</span>`;
+                        if (statusBadge) statusBadge.setSuccess(`${rowCount.toLocaleString()} groups`, msg.elapsedMs);
                         renderChart(msg.rows || []);
                     }
                 });
