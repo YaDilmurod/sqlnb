@@ -116,6 +116,8 @@ export function activate(ctx: any) {
   .st-header:hover .st-actions { opacity:1; }
   .st-act { padding:2px 6px; border:1px solid #ddd; border-radius:3px; background:#fff; cursor:pointer; font-size:11px; color:#555; line-height:1; transition:all .1s; }
   .st-act:hover { background:#eef2ff; border-color:#4f46e5; color:#4f46e5; }
+  .st-act-run { background:#f0fdf4; border-color:#86efac; color:#166534; }
+  .st-act-run:hover { background:#dcfce7; border-color:#16a34a; color:#15803d; }
 
   /* Column row */
   .sc-row { display:flex; align-items:center; gap:0; padding:3px 16px 3px 70px; border-bottom:1px solid #fafafa; font-size:12px; color:#374151; transition:background .1s; }
@@ -275,6 +277,7 @@ export function activate(ctx: any) {
                                     html += `<span class="st-actions">`;
                                     html += `<button class="st-act" data-copy-name="${esc(qName)}" title="Copy table name"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:text-bottom;margin-right:2px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg> Name</button>`;
                                     html += `<button class="st-act" data-copy-select="${esc(qName)}" title="Copy SELECT query"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:text-bottom;margin-right:2px;"><polyline points="4 7 4 4 20 4 20 7"></polyline><line x1="9" y1="20" x2="15" y2="20"></line><line x1="12" y1="4" x2="12" y2="20"></line></svg> SELECT</button>`;
+                                    html += `<button class="st-act st-act-run" data-run-query="SELECT * FROM ${esc(qName)} LIMIT 100;" title="Run quick query"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:text-bottom;margin-right:2px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Run</button>`;
                                     html += `</span>`;
                                     html += `</div>`;
 
@@ -377,6 +380,18 @@ export function activate(ctx: any) {
                     el.addEventListener('click', (e: any) => {
                         e.stopPropagation();
                         copyText(el.getAttribute('data-copy-col'), 'column name');
+                    });
+                });
+
+                // Run quick query
+                content.querySelectorAll('[data-run-query]').forEach((btn: any) => {
+                    btn.addEventListener('click', (e: any) => {
+                        e.stopPropagation();
+                        const query = btn.getAttribute('data-run-query');
+                        if (query && ctx.postMessage) {
+                            showToast('Running query...');
+                            ctx.postMessage({ type: 'schema-run-query', cellId, query });
+                        }
                     });
                 });
             }

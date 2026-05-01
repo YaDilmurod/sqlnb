@@ -196,6 +196,10 @@ export class SqlNotebookController {
     }
   }
 
+  updateAffinity(notebook: vscode.NotebookDocument, affinity: vscode.NotebookControllerAffinity) {
+    this._controller.updateNotebookAffinity(notebook, affinity);
+  }
+
   private async _execute(
     cells: vscode.NotebookCell[],
     notebook: vscode.NotebookDocument,

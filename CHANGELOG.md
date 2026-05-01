@@ -2,6 +2,16 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.0.61]
+- **Feature:** Replaced monolithic table sorting header with a dedicated sort icon/dropdown menu for a cleaner interface.
+- **Feature:** Excel-style cell selection — click and drag over table cells to view live aggregations (Avg, Count, Sum, Min, Max) in the status bar.
+- **Feature:** Added a "▶ Run" button directly in the Schema Browser for rapid table inspection.
+- **Feature:** Column Data Profiling — clicking the info icon on any table column instantly calculates and displays a detailed data profile for that column directly in a tooltip overlay.
+- **Architecture:** Refactored the Data Profile summary logic into an extensible strategy-based builder pattern (`ProfilerQueryBuilder` and `ProfilerViewBuilder`).
+- **UX:** Removed loading spinners from the results table; execution duration is now simply displayed in text.
+- **Fix:** Fixed database connection switching bugs in the connection renderer.
+- **Infra:** Removed legacy engine test suites and configuration.
+
 ## [0.0.60]
 - **Fix:** Resolved janky/broken spinner animation in the StatusBadge loading indicator. The SVG spinner was being destroyed and recreated every 100ms (via innerHTML), restarting the CSS animation on every tick. Now the SVG is created once as a real DOM node and only the elapsed-time text is updated.
 - **Fix:** Fixed timer leak in StatusBadge — calling `startLoading()` multiple times (e.g., clicking "Run Chart" rapidly) no longer leaks `setInterval` timers.

@@ -37,46 +37,7 @@ export function activate(ctx: any) {
             const ls = 'color:#555;font-size:11px;font-weight:600;display:flex;flex-direction:column;gap:4px;';
 
             element.innerHTML = `
-            <style>
-              @keyframes sqlnb-pulse {
-                0%, 100% { opacity: 0.4; }
-                50% { opacity: 1; }
-              }
-              @keyframes sqlnb-spinner {
-                to { transform: rotate(360deg); }
-              }
-              .sqlnb-loading-overlay {
-                position: absolute; top: 0; left: 0; right: 0; bottom: 0;
-                background: rgba(255,255,255,0.85);
-                display: flex; flex-direction: column; align-items: center; justify-content: center;
-                gap: 12px; z-index: 10; border-radius: 6px;
-                transition: opacity 0.2s ease;
-              }
-              .sqlnb-spinner {
-                width: 28px; height: 28px;
-                border: 3px solid #e0e0e0;
-                border-top-color: #4f46e5;
-                border-radius: 50%;
-                animation: sqlnb-spinner 0.7s linear infinite;
-              }
-              .sqlnb-loading-text {
-                font-size: 12px; color: #666;
-                animation: sqlnb-pulse 1.5s ease-in-out infinite;
-              }
-              .sqlnb-progress-bar {
-                width: 160px; height: 4px; background: #e5e7eb; border-radius: 2px; overflow: hidden;
-              }
-              .sqlnb-progress-fill {
-                height: 100%; background: linear-gradient(90deg, #4f46e5, #7c3aed);
-                border-radius: 2px;
-                animation: sqlnb-progress-indeterminate 1.5s ease-in-out infinite;
-              }
-              @keyframes sqlnb-progress-indeterminate {
-                0% { width: 0%; margin-left: 0%; }
-                50% { width: 60%; margin-left: 20%; }
-                100% { width: 0%; margin-left: 100%; }
-              }
-            </style>
+
             <div style="font-family:system-ui,sans-serif; display:flex; gap:20px; align-items:stretch; box-sizing:border-box; width:100%; overflow:hidden;" id="${vizId}-root">
               <div style="flex:0 0 240px; display:flex; flex-direction:column; gap:12px; background:#f9f9f9; padding:16px; border-radius:6px; border:1px solid #ddd;">
                 <h4 style="margin:0 0 4px 0; color:#333; font-size:14px;">Chart Settings</h4>
@@ -147,11 +108,6 @@ export function activate(ctx: any) {
               <div style="flex:1; min-width:0; display:flex; flex-direction:column; box-sizing:border-box; overflow:hidden;">
                 <div id="${vizId}-chart-wrapper" style="position:relative; flex:1; min-height:400px;">
                   <div id="${vizId}-chart" style="border:1px solid #ddd;border-radius:6px;padding:12px;background:#fff; position:absolute; top:0;left:0;right:0;bottom:0; display:flex; align-items:center; justify-content:center; box-sizing:border-box;"></div>
-                  <div id="${vizId}-loading" class="sqlnb-loading-overlay" style="display:none;">
-                    <div class="sqlnb-spinner"></div>
-                    <div class="sqlnb-loading-text">Aggregating data on server...</div>
-                    <div class="sqlnb-progress-bar"><div class="sqlnb-progress-fill"></div></div>
-                  </div>
                 </div>
               </div>
             </div>`;
@@ -166,19 +122,7 @@ export function activate(ctx: any) {
 
             function $(id: string): any { return document.getElementById(vizId + '-' + id); }
 
-            function showLoading(message?: string) {
-                const overlay = $('loading');
-                if (overlay) {
-                    overlay.style.display = 'flex';
-                    const textEl = overlay.querySelector('.sqlnb-loading-text');
-                    if (textEl && message) textEl.textContent = message;
-                }
-            }
 
-            function hideLoading() {
-                const overlay = $('loading');
-                if (overlay) overlay.style.display = 'none';
-            }
 
             function populateSelect(id: string, options: string[], includeNone: boolean) {
                 const el = $(id); if (!el) return;
@@ -267,7 +211,7 @@ export function activate(ctx: any) {
                 
                 const statusEl = $('status');
                 if (statusEl) statusEl.innerHTML = '<span style="color:#666;">Select X and Y axis, then click Run Chart.</span>';
-                hideLoading();
+
             }
 
             function requestAggregation() {
@@ -295,7 +239,7 @@ export function activate(ctx: any) {
                 const requestId = pendingRequestId;
 
                 if (statusBadge) statusBadge.startLoading('Querying database...');
-                showLoading('Aggregating data on server...');
+
 
                 if (ctx.postMessage) {
                     ctx.postMessage({
@@ -306,7 +250,6 @@ export function activate(ctx: any) {
                         extraYCols: extraYCols.length > 0 ? extraYCols : undefined
                     });
                 } else {
-                    hideLoading();
                     if (statusBadge) statusBadge.setError('Messaging unavailable. Cannot run server-side aggregation.');
                 }
             }
@@ -328,17 +271,16 @@ export function activate(ctx: any) {
 
                 // Load ECharts if needed
                 if (typeof (window as any).echarts === 'undefined') {
-                    showLoading('Loading chart library...');
+
                     const script = document.createElement('script');
                     script.src = 'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js';
-                    script.onload = () => { hideLoading(); buildAndRender(aggRows, chartDom); };
+                    script.onload = () => { buildAndRender(aggRows, chartDom); };
                     script.onerror = () => {
-                        hideLoading();
                         chartDom.innerHTML = '<div style="color:red;padding:20px;">Failed to load Apache ECharts from CDN. Please check your internet connection.</div>';
                     };
                     document.head.appendChild(script);
                 } else {
-                    hideLoading();
+
                     buildAndRender(aggRows, chartDom);
                 }
             }
@@ -549,7 +491,7 @@ export function activate(ctx: any) {
                 ctx.onDidReceiveMessage((msg: any) => {
                     if (msg.type === 'chart-aggregate-result' && msg.requestId === pendingRequestId) {
                         if (msg.error) {
-                            hideLoading();
+
                             if (statusBadge) statusBadge.setError(msg.error);
                             return;
                         }

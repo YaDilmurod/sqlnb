@@ -1,4 +1,5 @@
 // SQLNB Table Renderer - SQL results table with sorting and column pinning
+import { defaultProfilerViewBuilder } from './profiler-view';
 declare var acquireNotebookRendererApi: any;
 
 function escapeHtml(unsafe: string) {
@@ -26,6 +27,30 @@ const scrollPositions = new Map<string, number>();
 const pinnedColumnsMap = new Map<string, string[]>();
 
 export function activate(ctx: any) {
+    if (ctx.onDidReceiveMessage) {
+        ctx.onDidReceiveMessage((msg: any) => {
+            if (msg.type === 'profile-column-result') {
+                const { column, columnType, rows: resRows, error } = msg;
+                const popups = document.querySelectorAll(`.sqlnb-profile-popup[data-profile-popup="${escapeHtml(column)}"]`);
+                popups.forEach((popup: any) => {
+                    if (popup.style.display !== 'none') {
+                        const content = popup.querySelector('.sqlnb-profile-content');
+                        if (content) {
+                            if (error) {
+                                content.innerHTML = `<div style="color:#dc2626;">Error: ${escapeHtml(error)}</div>`;
+                            } else if (resRows && resRows.length > 0) {
+                                const profileRow = resRows[0];
+                                const totalRows = Number(profileRow['_sqlnb_total_rows'] || 0);
+                                const html = defaultProfilerViewBuilder.renderTable(profileRow, { [column]: columnType }, totalRows, escapeHtml);
+                                content.innerHTML = html;
+                            }
+                        }
+                    }
+                });
+            }
+        });
+    }
+
     return {
         renderOutputItem(outputItem: any, element: any) {
             const data = outputItem.json();
@@ -48,12 +73,12 @@ export function activate(ctx: any) {
                 : `${(elapsedMs / 1000).toFixed(2)}s`;
 
             const headerCells = headers.map((h: string, idx: number) => {
-                let icon = '';
+                let sortIndicator = '';
                 if (currentSort && currentSort.column === h) {
                     if (currentSort.direction === 'ASC') {
-                        icon = ' <span style="font-size:10px;">▲</span>';
+                        sortIndicator = ' <span style="font-size:10px;">▲</span>';
                     } else if (currentSort.direction === 'DESC') {
-                        icon = ' <span style="font-size:10px;">▼</span>';
+                        sortIndicator = ' <span style="font-size:10px;">▼</span>';
                     }
                 }
 
@@ -69,12 +94,52 @@ export function activate(ctx: any) {
                     stickyStyle = 'position:sticky;z-index:3;background:#fff;box-shadow:2px 0 4px rgba(0,0,0,0.06);';
                 }
 
-                return `<th data-col="${escapeHtml(h)}" style="padding:6px 12px;text-align:left;font-weight:600;border-bottom:2px solid #ddd;border-right:1px solid #e5e7eb;cursor:pointer;${stickyStyle}" title="Click to sort: ASC → DESC → Reset">
+                // Sort dropdown menu items
+                const isAsc = currentSort && currentSort.column === h && currentSort.direction === 'ASC';
+                const isDesc = currentSort && currentSort.column === h && currentSort.direction === 'DESC';
+                const isSorted = isAsc || isDesc;
+
+                const sortMenu = `<div class="sqlnb-sort-menu" data-sort-menu="${escapeHtml(h)}" style="display:none;">
+                    <div class="sqlnb-sort-item${isAsc ? ' sqlnb-sort-item-active' : ''}" data-sort-col="${escapeHtml(h)}" data-sort-dir="ASC">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>
+                        Sort Ascending
+                    </div>
+                    <div class="sqlnb-sort-item${isDesc ? ' sqlnb-sort-item-active' : ''}" data-sort-col="${escapeHtml(h)}" data-sort-dir="DESC">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
+                        Sort Descending
+                    </div>
+                    ${isSorted ? `<div class="sqlnb-sort-divider"></div>
+                    <div class="sqlnb-sort-item sqlnb-sort-item-reset" data-sort-col="${escapeHtml(h)}" data-sort-dir="RESET">
+                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>
+                        Reset Sort
+                    </div>` : ''}
+                </div>`;
+
+                // Sort icon button
+                const sortBtnColor = isSorted ? '#4f46e5' : 'currentColor';
+                const sortBtn = `<span class="sqlnb-sort-btn" data-sort-toggle="${escapeHtml(h)}" title="Sort options" style="cursor:pointer;opacity:0.3;transition:opacity .15s;margin-left:auto;flex-shrink:0;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${sortBtnColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
+                </span>`;
+
+                // Profile icon button
+                const profileBtn = `<span class="sqlnb-profile-btn" data-profile-col="${escapeHtml(h)}" title="Profile Column" style="cursor:pointer;opacity:0.3;transition:opacity .15s;margin-left:4px;flex-shrink:0;">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+                </span>`;
+
+                const profilePopup = `<div class="sqlnb-profile-popup" data-profile-popup="${escapeHtml(h)}" style="display:none;">
+                    <div class="sqlnb-profile-content" style="padding:12px;font-weight:normal;color:#333;"></div>
+                </div>`;
+
+                return `<th data-col="${escapeHtml(h)}" style="padding:6px 12px;text-align:left;font-weight:600;border-bottom:2px solid #ddd;border-right:1px solid #e5e7eb;position:relative;${stickyStyle}">
                     <div style="display:flex;align-items:center;gap:4px;">
                         <span class="sqlnb-pin" data-pin-col="${escapeHtml(h)}" title="${pinTitle}" style="cursor:pointer;font-size:11px;opacity:0.4;transition:opacity .15s;">${pinIcon}</span>
-                        <span>${escapeHtml(h)}${icon}</span>
+                        <span>${escapeHtml(h)}${sortIndicator}</span>
+                        ${sortBtn}
+                        ${profileBtn}
                     </div>
                     <div style="color:#888;font-size:10px;font-weight:400;margin-top:2px;">${dataTypeMap[h] || ''}</div>
+                    ${sortMenu}
+                    ${profilePopup}
                 </th>`;
             }).join('');
 
@@ -87,12 +152,13 @@ export function activate(ctx: any) {
                     if (isPinned) {
                         stickyStyle = `position:sticky;z-index:1;box-shadow:2px 0 4px rgba(0,0,0,0.06);`;
                     }
+                    const rawVal = val === null || val === undefined ? '' : (typeof val === 'object' ? JSON.stringify(val) : String(val));
                     if (val === null || val === undefined) {
-                        return `<td style="padding:4px 12px;border-bottom:1px solid #ddd;border-right:1px solid #eee;color:#aaa;font-style:italic;background:${bg};${stickyStyle}">NULL</td>`;
+                        return `<td class="sqlnb-cell" data-row="${i}" data-col="${escapeHtml(h)}" data-val="" style="padding:4px 12px;border-bottom:1px solid #ddd;border-right:1px solid #eee;color:#aaa;font-style:italic;background:${bg};${stickyStyle}">NULL</td>`;
                     }
                     const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
                     const display = str.length > 120 ? str.slice(0, 120) + '…' : str;
-                    return `<td style="padding:4px 12px;border-bottom:1px solid #ddd;border-right:1px solid #eee;font-family:var(--vscode-editor-font-family);font-size:13px;background:${bg};${stickyStyle}" title="${escapeHtml(str)}">${escapeHtml(display)}</td>`;
+                    return `<td class="sqlnb-cell" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid #ddd;border-right:1px solid #eee;font-family:var(--vscode-editor-font-family);font-size:13px;background:${bg};${stickyStyle}" title="${escapeHtml(str)}">${escapeHtml(display)}</td>`;
                 }).join('');
                 return `<tr>${cells}</tr>`;
             }).join('');
@@ -115,7 +181,58 @@ export function activate(ctx: any) {
             const tableHtml = `
             <style>
               .sqlnb-table-container th:hover .sqlnb-pin { opacity:1 !important; }
+              .sqlnb-table-container th:hover .sqlnb-sort-btn { opacity:1 !important; }
               .sqlnb-pin:hover { opacity:1 !important; transform:scale(1.2); }
+              .sqlnb-sort-btn:hover { opacity:1 !important; }
+
+              .sqlnb-sort-menu {
+                position:absolute; top:100%; left:0; z-index:50;
+                background:#fff; border:1px solid #e5e7eb; border-radius:6px;
+                box-shadow:0 4px 12px rgba(0,0,0,0.12); padding:4px 0;
+                min-width:160px; font-weight:400;
+              }
+              .sqlnb-sort-item {
+                display:flex; align-items:center; gap:8px;
+                padding:6px 12px; font-size:12px; color:#374151;
+                cursor:pointer; transition:background .1s; white-space:nowrap;
+              }
+              .sqlnb-sort-item:hover { background:#f3f4f6; }
+              .sqlnb-sort-item-active { background:#eef2ff; color:#4f46e5; font-weight:600; }
+              .sqlnb-sort-item-active:hover { background:#e0e7ff; }
+              .sqlnb-sort-item-reset { color:#dc2626; }
+              .sqlnb-sort-item-reset:hover { background:#fef2f2; }
+              .sqlnb-sort-divider { height:1px; background:#e5e7eb; margin:4px 0; }
+
+              .sqlnb-cell { cursor:cell; user-select:none; transition:background .05s; }
+              .sqlnb-cell-selected { outline:2px solid #4f46e5 !important; outline-offset:-2px; background:rgba(79,70,229,0.08) !important; }
+
+              .sqlnb-profile-popup {
+                position:absolute; top:100%; left:0; z-index:51;
+                background:#fff; border:1px solid #e5e7eb; border-radius:6px;
+                box-shadow:0 10px 25px rgba(0,0,0,0.15); padding:0;
+                min-width:300px; font-weight:400; text-align:left;
+                white-space:normal; cursor:default;
+              }
+              .sqlnb-profile-popup table { width:100%; font-size:12px; margin-bottom:0 !important; }
+              .sqlnb-profile-popup th { background:#f9fafb; font-weight:600; color:#4b5563; padding:4px 8px; text-transform:none; border-bottom:1px solid #e5e7eb; }
+              .sqlnb-profile-popup td { padding:4px 8px; border-bottom:1px solid #f3f4f6; color:#111827; }
+              .sqlnb-table-container th:hover .sqlnb-profile-btn { opacity:1 !important; }
+              .sqlnb-profile-btn:hover { opacity:1 !important; color:#4f46e5; }
+
+              .sqlnb-tag { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 11px; font-weight: 600; }
+              .tag-num { background: #dbeafe; color: #1e40af; }
+              .tag-str { background: #fce7f3; color: #9d174d; }
+              .tag-date { background: #dcfce3; color: #166534; }
+
+              .sqlnb-agg-bar {
+                display:flex; align-items:center; gap:16px; flex-wrap:wrap;
+                padding:6px 12px; font-size:12px; color:#374151;
+                background:#f8f9fb; border-top:1px solid #e5e7eb;
+                font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;
+              }
+              .sqlnb-agg-item { display:flex; align-items:center; gap:4px; }
+              .sqlnb-agg-label { color:#6b7280; font-weight:600; font-size:11px; text-transform:uppercase; }
+              .sqlnb-agg-value { font-weight:600; color:#111827; font-variant-numeric:tabular-nums; }
             </style>
             <div style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#333;">
                 <div style="margin-bottom:8px;font-size:12px;color:#666;">
@@ -132,6 +249,7 @@ export function activate(ctx: any) {
                     </table>
                     ${truncatedMsg}
                 </div>
+                <div class="sqlnb-agg-bar" style="display:none;"></div>
             </div>`;
 
             element.innerHTML = tableHtml;
@@ -179,36 +297,273 @@ export function activate(ctx: any) {
                 }
             }
 
-            // ── Sort click handlers ──
-            const ths = element.querySelectorAll('th');
-            ths.forEach((th: any) => {
-                th.addEventListener('click', (e: any) => {
-                    // Don't sort if clicking the pin button
-                    if ((e.target as any).closest('.sqlnb-pin')) return;
+            // ── Sort dropdown handlers ──
+            function closeAllSortMenus() {
+                element.querySelectorAll('.sqlnb-sort-menu').forEach((menu: any) => {
+                    menu.style.display = 'none';
+                });
+            }
 
-                    const col = th.getAttribute('data-col');
+            // Sort icon toggle button
+            element.querySelectorAll('.sqlnb-sort-btn').forEach((btn: any) => {
+                btn.addEventListener('click', (e: any) => {
+                    e.stopPropagation();
+                    const col = btn.getAttribute('data-sort-toggle');
                     if (!col) return;
-                    
-                    let nextDir: string;
-                    if (currentSort && currentSort.column === col) {
-                        if (currentSort.direction === 'ASC') {
-                            nextDir = 'DESC';
-                        } else if (currentSort.direction === 'DESC') {
-                            nextDir = 'RESET';
-                        } else {
-                            nextDir = 'ASC';
-                        }
-                    } else {
-                        nextDir = 'ASC';
-                    }
-                    
-                    if (ctx.postMessage) {
-                        ctx.postMessage({ cellUriStr, column: col, direction: nextDir });
-                    } else {
-                        console.error('SQLNB: ctx.postMessage is not available. Ensure requiresMessaging is set in package.json.');
+
+                    const menu = element.querySelector(`.sqlnb-sort-menu[data-sort-menu="${col}"]`);
+                    if (!menu) return;
+
+                    const isVisible = menu.style.display !== 'none';
+                    closeAllSortMenus();
+                    if (!isVisible) {
+                        menu.style.display = 'block';
                     }
                 });
             });
+
+            // Sort menu item clicks
+            element.querySelectorAll('.sqlnb-sort-item').forEach((item: any) => {
+                item.addEventListener('click', (e: any) => {
+                    e.stopPropagation();
+                    const col = item.getAttribute('data-sort-col');
+                    const dir = item.getAttribute('data-sort-dir');
+                    if (!col || !dir) return;
+                    closeAllSortMenus();
+                    if (ctx.postMessage) {
+                        ctx.postMessage({ cellUriStr, column: col, direction: dir });
+                    }
+                });
+            });
+
+            // Profile popup handlers
+            function closeAllProfilePopups() {
+                element.querySelectorAll('.sqlnb-profile-popup').forEach((popup: any) => {
+                    popup.style.display = 'none';
+                });
+            }
+
+            element.querySelectorAll('.sqlnb-profile-btn').forEach((btn: any) => {
+                btn.addEventListener('click', (e: any) => {
+                    e.stopPropagation();
+                    const col = btn.getAttribute('data-profile-col');
+                    if (!col) return;
+
+                    const popup = element.querySelector(`.sqlnb-profile-popup[data-profile-popup="${col}"]`);
+                    if (!popup) return;
+
+                    const isVisible = popup.style.display !== 'none';
+                    closeAllSortMenus();
+                    closeAllProfilePopups();
+
+                    if (!isVisible) {
+                        popup.style.display = 'block';
+                        const content = popup.querySelector('.sqlnb-profile-content');
+                        content.innerHTML = '<div style="color:#666;font-style:italic;">Profiling...</div>';
+                        
+                        // Infer column type using defaultProfilerViewBuilder
+                        const inferredTypes = defaultProfilerViewBuilder.inferTypes(rows, [col]);
+                        const colType = inferredTypes[col] || 'string';
+
+                        if (ctx.postMessage) {
+                            ctx.postMessage({ type: 'profile-column', cellUriStr, column: col, columnType: colType });
+                        }
+                    }
+                });
+            });
+
+            // Prevent clicks inside popup from closing it
+            element.querySelectorAll('.sqlnb-profile-popup').forEach((popup: any) => {
+                popup.addEventListener('click', (e: any) => e.stopPropagation());
+            });
+
+            // Close sort and profile menus on click outside
+            element.addEventListener('click', (e: any) => {
+                if (!(e.target as any).closest('.sqlnb-sort-btn') && !(e.target as any).closest('.sqlnb-sort-menu')) {
+                    closeAllSortMenus();
+                }
+                if (!(e.target as any).closest('.sqlnb-profile-btn') && !(e.target as any).closest('.sqlnb-profile-popup')) {
+                    closeAllProfilePopups();
+                }
+            });
+
+
+
+            // ── Cell selection and aggregation bar ──
+            const selectedCells: Set<string> = new Set(); // "row:col" keys
+            let lastClickedCell: { row: number; col: string } | null = null;
+
+            function getCellKey(row: number, col: string): string {
+                return `${row}:${col}`;
+            }
+
+            function clearSelection() {
+                selectedCells.clear();
+                element.querySelectorAll('.sqlnb-cell-selected').forEach((el: any) => {
+                    el.classList.remove('sqlnb-cell-selected');
+                });
+            }
+
+            function applyCellHighlight(row: number, col: string, selected: boolean) {
+                const cell = element.querySelector(`.sqlnb-cell[data-row="${row}"][data-col="${escapeHtml(col)}"]`);
+                if (cell) {
+                    if (selected) cell.classList.add('sqlnb-cell-selected');
+                    else cell.classList.remove('sqlnb-cell-selected');
+                }
+            }
+
+            function updateAggBar() {
+                const aggBar = element.querySelector('.sqlnb-agg-bar');
+                if (!aggBar) return;
+
+                if (selectedCells.size === 0) {
+                    aggBar.style.display = 'none';
+                    return;
+                }
+
+                // Collect numeric values from selected cells
+                const numericValues: number[] = [];
+                selectedCells.forEach((key: string) => {
+                    const [rowStr, col] = key.split(':');
+                    const cell = element.querySelector(`.sqlnb-cell[data-row="${rowStr}"][data-col="${escapeHtml(col)}"]`);
+                    if (cell) {
+                        const val = cell.getAttribute('data-val');
+                        if (val !== null && val !== '') {
+                            const num = parseFloat(val);
+                            if (!isNaN(num)) {
+                                numericValues.push(num);
+                            }
+                        }
+                    }
+                });
+
+                if (numericValues.length === 0) {
+                    aggBar.innerHTML = `<span style="color:#888;">Selected ${selectedCells.size} cell${selectedCells.size > 1 ? 's' : ''} — no numeric values</span>`;
+                    aggBar.style.display = 'flex';
+                    return;
+                }
+
+                const count = numericValues.length;
+                const sum = numericValues.reduce((a, b) => a + b, 0);
+                const avg = sum / count;
+                const min = Math.min(...numericValues);
+                const max = Math.max(...numericValues);
+
+                const fmt = (v: number) => {
+                    if (Number.isInteger(v)) return v.toLocaleString();
+                    return v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+                };
+
+                aggBar.innerHTML = `
+                    <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Count:</span> <span class="sqlnb-agg-value">${count}</span></span>
+                    <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Sum:</span> <span class="sqlnb-agg-value">${fmt(sum)}</span></span>
+                    <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Avg:</span> <span class="sqlnb-agg-value">${fmt(avg)}</span></span>
+                    <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Min:</span> <span class="sqlnb-agg-value">${fmt(min)}</span></span>
+                    <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Max:</span> <span class="sqlnb-agg-value">${fmt(max)}</span></span>
+                `;
+                aggBar.style.display = 'flex';
+            }
+
+            let isDragging = false;
+            let dragStartCell: { row: number; col: string } | null = null;
+
+            // Wire up cell click/drag handlers
+            element.querySelectorAll('.sqlnb-cell').forEach((cell: any) => {
+                cell.addEventListener('mousedown', (e: any) => {
+                    if (e.button !== 0) return; // left click only
+                    e.preventDefault(); // prevent text selection while dragging
+
+                    const row = parseInt(cell.getAttribute('data-row'));
+                    const col = cell.getAttribute('data-col');
+                    if (isNaN(row) || !col) return;
+
+                    isDragging = true;
+                    
+                    const key = getCellKey(row, col);
+                    const isMetaKey = e.metaKey || e.ctrlKey;
+                    const isShiftKey = e.shiftKey;
+
+                    if (isShiftKey && lastClickedCell) {
+                        dragStartCell = lastClickedCell;
+                        // Select range from last clicked to current
+                        const startRow = Math.min(dragStartCell.row, row);
+                        const endRow = Math.max(dragStartCell.row, row);
+                        const startColIdx = Math.min(headers.indexOf(dragStartCell.col), headers.indexOf(col));
+                        const endColIdx = Math.max(headers.indexOf(dragStartCell.col), headers.indexOf(col));
+
+                        if (!isMetaKey) clearSelection();
+                        for (let r = startRow; r <= endRow; r++) {
+                            for (let cIdx = startColIdx; cIdx <= endColIdx; cIdx++) {
+                                const c = headers[cIdx];
+                                if (!c) continue;
+                                const k = getCellKey(r, c);
+                                selectedCells.add(k);
+                                applyCellHighlight(r, c, true);
+                            }
+                        }
+                    } else if (isMetaKey) {
+                        dragStartCell = { row, col };
+                        lastClickedCell = { row, col };
+                        // Toggle individual cell
+                        if (selectedCells.has(key)) {
+                            selectedCells.delete(key);
+                            applyCellHighlight(row, col, false);
+                        } else {
+                            selectedCells.add(key);
+                            applyCellHighlight(row, col, true);
+                        }
+                    } else {
+                        dragStartCell = { row, col };
+                        lastClickedCell = { row, col };
+                        // Regular click: select single cell
+                        clearSelection();
+                        selectedCells.add(key);
+                        applyCellHighlight(row, col, true);
+                    }
+                    
+                    updateAggBar();
+                });
+
+                cell.addEventListener('mouseenter', (e: any) => {
+                    if (!isDragging || !dragStartCell) return;
+                    
+                    const row = parseInt(cell.getAttribute('data-row'));
+                    const col = cell.getAttribute('data-col');
+                    if (isNaN(row) || !col) return;
+
+                    const isMetaKey = e.metaKey || e.ctrlKey;
+                    
+                    // We only clear if we aren't adding to a meta selection, but to keep drag smooth
+                    // and correctly reset previously dragged cells, we need to clear and re-apply from dragStart
+                    if (!isMetaKey) {
+                        clearSelection();
+                    } else {
+                        // For meta drag, we ideally want to remember the selection BEFORE the drag started,
+                        // but that's complex. For simplicity, dragging with meta key adds the dragged rectangle.
+                    }
+
+                    const startRow = Math.min(dragStartCell.row, row);
+                    const endRow = Math.max(dragStartCell.row, row);
+                    const startColIdx = Math.min(headers.indexOf(dragStartCell.col), headers.indexOf(col));
+                    const endColIdx = Math.max(headers.indexOf(dragStartCell.col), headers.indexOf(col));
+
+                    for (let r = startRow; r <= endRow; r++) {
+                        for (let cIdx = startColIdx; cIdx <= endColIdx; cIdx++) {
+                            const c = headers[cIdx];
+                            if (!c) continue;
+                            const k = getCellKey(r, c);
+                            selectedCells.add(k);
+                            applyCellHighlight(r, c, true);
+                        }
+                    }
+                    updateAggBar();
+                });
+            });
+
+            window.addEventListener('mouseup', () => {
+                isDragging = false;
+            });
+
 
             // Handle scroll restoration and tracking
             const tableContainer = element.querySelector('.sqlnb-table-container');

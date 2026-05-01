@@ -24,38 +24,11 @@ export class StatusBadge {
         this.el.style.backgroundColor = '#eff6ff';
         this.el.style.color = '#1e40af';
 
-        // Inject the spin keyframe once
-        if (!document.getElementById('sqlnb-spin-style')) {
-            const style = document.createElement('style');
-            style.id = 'sqlnb-spin-style';
-            style.textContent = `@keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }`;
-            document.head.appendChild(style);
-        }
-
-        // Build the DOM once so the SVG animation is never interrupted
         this.el.innerHTML = '';
-
-        const svgNS = 'http://www.w3.org/2000/svg';
-        const svg = document.createElementNS(svgNS, 'svg');
-        svg.setAttribute('width', '14');
-        svg.setAttribute('height', '14');
-        svg.setAttribute('viewBox', '0 0 24 24');
-        svg.setAttribute('fill', 'none');
-        svg.setAttribute('stroke', 'currentColor');
-        svg.setAttribute('stroke-width', '2');
-        svg.setAttribute('stroke-linecap', 'round');
-        svg.setAttribute('stroke-linejoin', 'round');
-        svg.style.animation = 'spin 1s linear infinite';
-        svg.style.flexShrink = '0';
-        const path = document.createElementNS(svgNS, 'path');
-        path.setAttribute('d', 'M21 12a9 9 0 1 1-6.219-8.56');
-        svg.appendChild(path);
-        this.el.appendChild(svg);
 
         this.textSpan = document.createElement('span');
         this.el.appendChild(this.textSpan);
 
-        // Only update the text node on each tick — never touch the SVG
         const tick = () => {
             const elapsed = ((Date.now() - this.startTime) / 1000).toFixed(1);
             if (this.textSpan) this.textSpan.textContent = `${message} (${elapsed}s)`;
