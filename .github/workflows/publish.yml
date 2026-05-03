@@ -38,7 +38,6 @@ jobs:
         run: npm run compile
 
       - name: Publish to Open VSX
-        continue-on-error: true
         run: npx ovsx publish --target ${{ matrix.target }} -p ${{ secrets.OVSX_PAT }}
 
       - name: Publish to VS Code Marketplace

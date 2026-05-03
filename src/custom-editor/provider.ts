@@ -55,20 +55,23 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
 
     webviewPanel.webview.html = this.getHtml(webviewPanel.webview);
 
+    webviewPanel.webview.postMessage({ type: 'recent-connections', connections: this.context.globalState.get<string[]>('sqlnb-recent-connections', []) });
+
     // Initial render
     webviewPanel.webview.postMessage({ type: 'doc-update', text: document.getText() });
 
     // Guard against save→doc-update→re-render loops
-    let suppressNextDocUpdate = false;
+    let expectedDocText = document.getText();
 
     // File changed externally → push to webview
     const changeDocSub = vscode.workspace.onDidChangeTextDocument((e) => {
       if (e.document.uri.toString() === document.uri.toString() && e.contentChanges.length > 0) {
-        if (suppressNextDocUpdate) {
-          suppressNextDocUpdate = false;
-          return;
+        const currentText = document.getText();
+        if (currentText === expectedDocText) {
+          return; // Ignore this update, we caused it via save
         }
-        webviewPanel.webview.postMessage({ type: 'doc-update', text: document.getText() });
+        expectedDocText = currentText;
+        webviewPanel.webview.postMessage({ type: 'doc-update', text: currentText });
       }
     });
 
@@ -81,7 +84,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
     webviewPanel.webview.onDidReceiveMessage(async (msg) => {
       switch (msg.type) {
         case 'save': {
-          suppressNextDocUpdate = true;
+          expectedDocText = msg.text;
           const edit = new vscode.WorkspaceEdit();
           edit.replace(document.uri, new vscode.Range(0, 0, document.lineCount, 0), msg.text);
           await vscode.workspace.applyEdit(edit);
@@ -89,6 +92,15 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
         }
         case 'connect': {
           const result = await this.connectToDb(msg.connectionString, msg.driverType);
+          if (result.success && msg.connectionString) {
+            const recent = this.context.globalState.get<string[]>('sqlnb-recent-connections', []);
+            if (!recent.includes(msg.connectionString)) {
+              recent.unshift(msg.connectionString);
+              if (recent.length > 10) recent.pop();
+              await this.context.globalState.update('sqlnb-recent-connections', recent);
+              webviewPanel.webview.postMessage({ type: 'recent-connections', connections: recent });
+            }
+          }
           webviewPanel.webview.postMessage({ type: 'connect-result', ...result });
           break;
         }
@@ -104,7 +116,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
         case 'execute-sql': {
           const result = await this.executeQuery(msg.query);
           if (result.rows && result.fields) {
-            this.resultStore.set(msg.cellIndex, { 
+            this.resultStore.set(msg.cellName, { 
               query: msg.query, 
               rows: result.rows, 
               columns: result.fields.map(f => f.name) 
@@ -112,6 +124,35 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             this.lastResult = result.rows;
           }
           webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result });
+          break;
+        }
+        case 'execute-sort': {
+          if (!this.driver || !this.driver.isConnected()) {
+            break;
+          }
+          if (msg.direction === 'RESET') {
+             const result = await this.executeQuery(msg.query);
+             webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result });
+             break;
+          }
+          const sortQuery = `SELECT * FROM (\n${msg.query}\n) AS _sqlnb_sort ORDER BY "${msg.column}" ${msg.direction}`;
+          const result = await this.executeQuery(sortQuery);
+          webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result, command: msg.query, currentSort: { column: msg.column, direction: msg.direction } });
+          break;
+        }
+        case 'profile-column': {
+          if (!this.driver || !this.driver.isConnected()) {
+            break;
+          }
+          const col = msg.column;
+          const q = buildSummaryQuery(msg.query, { [col]: msg.columnType }, this.driverType as 'postgres'|'duckdb');
+          const start = performance.now();
+          try {
+             const res = await this.driver!.executeRaw(q);
+             webviewPanel.webview.postMessage({ type: 'profile-column-result', cellIndex: msg.cellIndex, column: col, columnType: msg.columnType, rows: res.rows || [], elapsedMs: performance.now() - start });
+          } catch(err: any) {
+             webviewPanel.webview.postMessage({ type: 'profile-column-result', cellIndex: msg.cellIndex, column: col, error: err.message });
+          }
           break;
         }
         case 'schema-load': {
@@ -131,9 +172,9 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           break;
         }
         case 'chart-aggregate': {
-          const stored = this.resultStore.get(msg.cellIndex);
+          const stored = this.resultStore.get(msg.datasetKey);
           if (!stored) {
-            webviewPanel.webview.postMessage({ type: 'chart-aggregate-result', requestId: msg.requestId, chartIndex: msg.chartIndex, error: 'No data. Run SQL cell first.' });
+            webviewPanel.webview.postMessage({ type: 'chart-aggregate-result', requestId: msg.requestId, chartIndex: msg.chartIndex, error: `No data for table '${msg.datasetKey}'. Run SQL cell first.` });
             break;
           }
           const q = buildAggregationQuery(stored.query, msg.xCol, msg.yCol, msg.aggFn, msg.colorCol, this.driverType as 'postgres'|'duckdb', msg.extraYCols);
@@ -147,9 +188,9 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           break;
         }
         case 'summary-aggregate': {
-          const stored = this.resultStore.get(msg.cellIndex);
+          const stored = this.resultStore.get(msg.datasetKey);
           if (!stored) {
-            webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, error: 'No data. Run SQL cell first.' });
+            webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, error: `No data for table '${msg.datasetKey}'. Run SQL cell first.` });
             break;
           }
           // Infer column types from first 50 rows
@@ -184,7 +225,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
 
   // ── Database operations ──
 
-  private async connectToDb(connStr: string, driverType: string = 'postgres'): Promise<{ success: boolean; error?: string; dbName?: string }> {
+  private async connectToDb(connStr: string, driverType: string = 'postgres'): Promise<{ success: boolean; error?: string; dbName?: string; driverType?: string }> {
     try {
       await this.disconnect();
       
@@ -204,7 +245,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
         }
       }
       
-      return { success: true, dbName: this.currentDbName };
+      return { success: true, dbName: this.currentDbName, driverType: this.driverType };
     } catch (err: any) {
       this.driver = null;
       return { success: false, error: err.message };
@@ -297,7 +338,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width,initial-scale=1.0">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${cspSource} https://cdnjs.cloudflare.com https://cdn.jsdelivr.net 'unsafe-eval'; style-src ${cspSource} 'unsafe-inline' https://cdnjs.cloudflare.com; font-src https://cdnjs.cloudflare.com; connect-src https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src ${cspSource} 'unsafe-inline' https://cdnjs.cloudflare.com https://cdn.jsdelivr.net 'unsafe-eval'; style-src ${cspSource} 'unsafe-inline' https://cdnjs.cloudflare.com; font-src https://cdnjs.cloudflare.com; connect-src https://cdnjs.cloudflare.com https://cdn.jsdelivr.net;">
   <title>SQL Notebook</title>
   <link rel="stylesheet" href="${styleUri}">
 </head>

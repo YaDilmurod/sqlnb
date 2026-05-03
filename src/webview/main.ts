@@ -1,20 +1,32 @@
 declare const acquireVsCodeApi: any;
 const vscode = acquireVsCodeApi();
+(window as any).vscode = vscode;
 
 import { renderSchemaBlock, handleSchemaLoadResult } from './components/schema';
 import { renderChartBlock, handleChartAggregateResult } from './components/chart';
 import { loadMonaco, initMonacoEditor } from './components/monaco';
 import { renderSummaryBlock, handleSummaryAggregateResult } from './components/summary';
+import { renderAdvancedTableHtml, setupAdvancedTableListeners } from './components/table';
+import { defaultProfilerViewBuilder } from './components/profiler-view';
+import { renderWiki } from './components/wiki';
 
 interface Cell {
   type: string;
   content: string;
-  _output?: any; // To store result data transiently
+  name?: string; // Custom reference name
+  _output?: any; // SQL HTML output
+  _outputData?: any;
+  _chartData?: any; // Chart cache
+  _schemaData?: any; // Schema cache
+  _summaryData?: any; // Profiler cache
+  _showWiki?: boolean; // Whether wiki is visible
 }
 
 let cells: Cell[] = [];
 let isConnected = false;
 let dbName = '';
+let driverType = '';
+let recentConnections: string[] = [];
 
 // Helper to escape HTML to prevent XSS
 function escapeHtml(str: any): string {
@@ -38,7 +50,7 @@ function parseCells(jsonText: string): Cell[] {
 
 function serializeCells(): string {
   const data = {
-    cells: cells.map(c => ({ type: c.type, content: c.content }))
+    cells: cells.map(c => ({ type: c.type, content: c.content, name: c.name }))
   };
   return JSON.stringify(data, null, 2);
 }
@@ -54,11 +66,11 @@ function renderMarkdown(md: string): string {
     .replace(/^### (.*$)/gim, '<h3>$1</h3>')
     .replace(/^## (.*$)/gim, '<h2>$1</h2>')
     .replace(/^# (.*$)/gim, '<h1>$1</h1>')
-    .replace(/\\*\\*(.*?)\\*\\*/g, '<strong>$1</strong>')
-    .replace(/\\*(.*?)\\*/g, '<em>$1</em>')
+    .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.*?)\*/g, '<em>$1</em>')
     .replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
-    .split('\\n')
+    .split('\n')
     .map(line => {
       const trimmed = line.trim();
       if (!trimmed) return '';
@@ -86,7 +98,7 @@ function renderApp() {
   const app = document.getElementById('app');
   if (!app) return;
 
-  app.innerHTML = '<div class="topbar"><div class="topbar-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>SQL Notebook</div><div id="global-status" class="global-status disconnected"><div class="status-dot"></div> Disconnected</div></div><div class="cells-container" id="cells"></div><div class="add-cell-bar"><button class="btn-add" onclick="addCell(&quot;sql&quot;)">+ SQL</button><button class="btn-add" onclick="addCell(&quot;markdown&quot;)">+ Markdown</button><button class="btn-add" onclick="addCell(&quot;schema&quot;)">+ Schema</button><button class="btn-add" onclick="addCell(&quot;chart&quot;)">+ Chart</button><button class="btn-add" onclick="addCell(&quot;summary&quot;)">+ Profiler</button></div>';
+  app.innerHTML = '<div class="topbar"><div class="topbar-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>SQL Notebook</div><div id="global-status" class="global-status disconnected"><div class="status-dot"></div> Disconnected</div></div><div class="cells-container" id="cells"></div><div class="add-cell-bar"><button class="btn-add" data-action="addCell" data-type="sql">+ SQL</button><button class="btn-add" data-action="addCell" data-type="markdown">+ Markdown</button><button class="btn-add" data-action="addCell" data-type="schema">+ Schema</button><button class="btn-add" data-action="addCell" data-type="chart">+ Chart</button><button class="btn-add" data-action="addCell" data-type="summary">+ Profiler</button></div>';
 
   renderCells();
   updateGlobalStatus();
@@ -104,7 +116,10 @@ function renderCells() {
 
     // 1. Toolbar
     let toolbar = '<div class="cell-toolbar">';
-    if (cell.type === 'sql') toolbar += '<div class="cell-badge badge-sql">SQL</div>';
+    if (cell.type === 'sql') {
+      const cellName = cell.name || 'table_' + idx;
+      toolbar += '<div class="cell-badge badge-sql">SQL</div><input type="text" id="cell-name-' + idx + '" class="cell-name-input" value="' + escapeHtml(cellName) + '" style="background:transparent;border:none;border-bottom:1px dotted #ccc;outline:none;font-size:12px;color:#666;padding:2px 4px;width:120px;margin-left:8px;font-family:monospace;" placeholder="table_' + idx + '" />';
+    }
     else if (cell.type === 'markdown') toolbar += '<div class="cell-badge badge-md">Markdown</div>';
     else if (cell.type === 'connection') toolbar += '<div class="cell-badge badge-conn">Connection</div>';
     else if (cell.type === 'schema') toolbar += '<div class="cell-badge" style="background:#eef2ff;color:#4f46e5;">Schema</div>';
@@ -114,30 +129,39 @@ function renderCells() {
     
     toolbar += '<div class="cell-actions">';
     if (cell.type === 'sql') {
-      toolbar += '<button class="btn-action btn-run" onclick="runSql(' + idx + ')"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
+      toolbar += '<button class="btn-action btn-run" data-action="runSql" data-idx="' + idx + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
+      toolbar += '<button class="btn-icon" data-action="toggleWiki" data-idx="' + idx + '" title="Wiki / Examples"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></button>';
     }
-    if (idx > 0) toolbar += '<button class="btn-icon" onclick="moveCell(' + idx + ', -1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>';
-    if (idx < cells.length - 1) toolbar += '<button class="btn-icon" onclick="moveCell(' + idx + ', 1)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg></button>';
-    toolbar += '<button class="btn-icon btn-delete" onclick="deleteCell(' + idx + ')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>';
+    if (idx > 0) toolbar += '<button class="btn-icon" data-action="moveCellUp" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>';
+    if (idx < cells.length - 1) toolbar += '<button class="btn-icon" data-action="moveCellDown" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg></button>';
+    toolbar += '<button class="btn-icon btn-delete" data-action="deleteCell" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>';
     toolbar += '</div></div>';
 
     // 2. Content Area
     let content = '<div class="cell-content">';
 
     if (cell.type === 'connection') {
-      content += '<div class="conn-form"><div class="conn-row"><select id="conn-driver-' + idx + '" class="conn-select"><option value="postgres">PostgreSQL</option><option value="duckdb">DuckDB</option></select><input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(cell.content) + '" placeholder="postgresql://user:password@localhost:5432/dbname" spellcheck="false" />';
+      content += '<div class="conn-form"><div class="conn-row"><select id="conn-driver-' + idx + '" class="conn-select"><option value="postgres">PostgreSQL</option><option value="duckdb">DuckDB</option></select><input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(cell.content) + '" placeholder="postgresql://user:password@localhost:5432/dbname" spellcheck="false" list="recent-conns" />';
+      content += '<datalist id="recent-conns">' + recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('') + '</datalist>';
       if (isConnected) {
-        content += '<button class="btn-primary" style="background:var(--danger)" onclick="disconnectDb()">Disconnect</button>';
+        content += '<button class="btn-primary" style="background:var(--danger)" data-action="disconnectDb">Disconnect</button>';
       } else {
-        content += '<button class="btn-primary" onclick="connectDb(' + idx + ')">Connect</button>';
+        content += '<button class="btn-primary" data-action="connectDb" data-idx="' + idx + '">Connect</button>';
       }
       content += '</div><div id="conn-msg-' + idx + '" style="font-size:13px; margin-top:8px;"></div></div>';
     } 
     else if (cell.type === 'sql') {
       content += '<div class="sql-editor" id="sql-container-' + idx + '"><div style="padding:10px;color:#888;">Loading editor...</div></div>';
+      
+      if (cell._showWiki) {
+        content += renderWiki(driverType);
+      }
+
+      content += '<div id="output-' + idx + '">';
       if (cell._output) {
         content += cell._output;
       }
+      content += '</div>';
     } 
     else if (cell.type === 'markdown') {
       content += '<div class="md-editor" style="display:none;" id="md-edit-' + idx + '"><textarea id="md-ta-' + idx + '" spellcheck="false">' + escapeHtml(cell.content) + '</textarea></div><div class="md-preview" id="md-preview-' + idx + '" ondblclick="editMarkdown(' + idx + ')">' + (renderMarkdown(cell.content) || '<em>Double-click to edit...</em>') + '</div>';
@@ -146,10 +170,10 @@ function renderCells() {
       content += renderSchemaBlock(idx, escapeHtml);
     }
     else if (cell.type === 'chart') {
-      content += renderChartBlock(idx, escapeHtml);
+      content += renderChartBlock(idx, cell.content, escapeHtml);
     }
     else if (cell.type === 'summary') {
-      content += renderSummaryBlock(idx, escapeHtml);
+      content += renderSummaryBlock(idx, cell.content, escapeHtml);
     }
 
     content += '</div>';
@@ -173,6 +197,13 @@ function renderCells() {
           }
         );
       });
+      const nameInp = document.getElementById('cell-name-' + idx) as HTMLInputElement;
+      if (nameInp) {
+        nameInp.addEventListener('change', () => {
+          cells[idx].name = nameInp.value;
+          save();
+        });
+      }
     } else if (cell.type === 'connection') {
       const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
       if (inp) {
@@ -187,6 +218,27 @@ function renderCells() {
           }
         });
       }
+    } else if (cell.type === 'chart') {
+      ['chart-ds-', 'chart-type-', 'chart-x-', 'chart-y-', 'chart-color-', 'chart-agg-'].forEach(prefix => {
+        const el = document.getElementById(prefix + idx) as HTMLInputElement | HTMLSelectElement;
+        if (el) el.addEventListener('change', () => {
+            cells[idx].content = JSON.stringify({
+                ds: (document.getElementById(`chart-ds-${idx}`) as HTMLInputElement)?.value,
+                type: (document.getElementById(`chart-type-${idx}`) as HTMLSelectElement)?.value,
+                x: (document.getElementById(`chart-x-${idx}`) as HTMLInputElement)?.value,
+                y: (document.getElementById(`chart-y-${idx}`) as HTMLInputElement)?.value,
+                color: (document.getElementById(`chart-color-${idx}`) as HTMLInputElement)?.value,
+                agg: (document.getElementById(`chart-agg-${idx}`) as HTMLSelectElement)?.value
+            });
+            save();
+        });
+      });
+    } else if (cell.type === 'summary') {
+      const el = document.getElementById(`summary-ds-${idx}`) as HTMLInputElement;
+      if (el) el.addEventListener('change', () => {
+          cells[idx].content = JSON.stringify({ ds: el.value });
+          save();
+      });
     } else if (cell.type === 'markdown') {
       const ta = document.getElementById('md-ta-' + idx) as HTMLTextAreaElement;
       if (ta) {
@@ -197,6 +249,20 @@ function renderCells() {
         });
       }
     }
+    
+    // Re-hydrate cached DOM states
+    setTimeout(() => {
+      if (cell.type === 'chart' && cell._chartData) {
+        handleChartAggregateResult(cell._chartData, escapeHtml);
+      } else if (cell.type === 'schema' && cell._schemaData) {
+        handleSchemaLoadResult(cell._schemaData, escapeHtml);
+      } else if (cell.type === 'summary' && cell._summaryData) {
+        handleSummaryAggregateResult(cell._summaryData, escapeHtml);
+      }
+      if (cell.type === 'sql' && cell._outputData) {
+        setupAdvancedTableListeners(idx, cell._outputData, escapeHtml);
+      }
+    }, 0);
   });
 }
 
@@ -220,24 +286,32 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 (window as any).chartRun = (idx: number) => {
   const xCol = (document.getElementById(`chart-x-${idx}`) as HTMLInputElement)?.value;
   const yCol = (document.getElementById(`chart-y-${idx}`) as HTMLInputElement)?.value;
+  const colorCol = (document.getElementById(`chart-color-${idx}`) as HTMLInputElement)?.value;
   const aggFn = (document.getElementById(`chart-agg-${idx}`) as HTMLSelectElement)?.value;
-  const dsIdx = parseInt((document.getElementById(`chart-ds-${idx}`) as HTMLInputElement)?.value || '0');
+  const dsKey = (document.getElementById(`chart-ds-${idx}`) as HTMLInputElement)?.value || 'table_0';
   
   vscode.postMessage({
     type: 'chart-aggregate',
     requestId: Date.now(),
-    cellIndex: dsIdx, 
+    datasetKey: dsKey, 
     chartIndex: idx, 
-    xCol, yCol, aggFn
+    xCol, yCol, colorCol, aggFn
   });
 };
 
+(window as any).chartRerender = (idx: number) => {
+  const cell = cells[idx];
+  if (cell && cell._chartData) {
+    handleChartAggregateResult(cell._chartData, escapeHtml);
+  }
+};
+
 (window as any).summaryRun = (idx: number) => {
-  const dsIdx = parseInt((document.getElementById(`summary-ds-${idx}`) as HTMLInputElement)?.value || '0');
+  const dsKey = (document.getElementById(`summary-ds-${idx}`) as HTMLInputElement)?.value || 'table_0';
   
   vscode.postMessage({
     type: 'summary-aggregate',
-    cellIndex: dsIdx,
+    datasetKey: dsKey,
     summaryIndex: idx
   });
 };
@@ -279,9 +353,17 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 (window as any).runSql = (idx: number) => {
   const cell = cells[idx];
   if (!cell) return;
-  cell._output = '<div class="output-area"><div class="output-meta"><svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px; margin-right:6px"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Running... <button class="btn-action" style="margin-left:auto;color:var(--danger);" onclick="cancelSql()"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Cancel</button></div></div>';
+  
+  const nameInp = document.getElementById('cell-name-' + idx) as HTMLInputElement;
+  if (nameInp) {
+    cell.name = nameInp.value;
+    save();
+  }
+  const cellName = cell.name || `table_${idx}`;
+
+  cell._output = '<div class="output-area"><div class="output-meta"><svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px; margin-right:6px"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Running... <button class="btn-action" style="margin-left:auto;color:var(--danger);" data-action="cancelSql"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Cancel</button></div></div>';
   renderCells();
-  vscode.postMessage({ type: 'execute-sql', cellIndex: idx, query: cell.content });
+  vscode.postMessage({ type: 'execute-sql', cellIndex: idx, cellName: cellName, query: cell.content });
 };
 
 (window as any).cancelSql = () => {
@@ -315,8 +397,16 @@ window.addEventListener('message', event => {
   const msg = event.data;
   
   if (msg.type === 'doc-update') {
-    // Only re-parse if we don't have cells (initial load) or forced
-    cells = parseCells(msg.text);
+    const parsed = parseCells(msg.text);
+    // Merge transient state
+    cells = parsed.map((nc, i) => {
+      const oc = cells[i];
+      if (oc && oc.type === nc.type) {
+        return { ...nc, _output: oc._output, _outputData: oc._outputData, _chartData: oc._chartData, _schemaData: oc._schemaData, _summaryData: oc._summaryData };
+      }
+      return nc;
+    });
+    
     if (!document.getElementById('app')?.innerHTML) {
       renderApp();
     } else {
@@ -327,13 +417,25 @@ window.addEventListener('message', event => {
   if (msg.type === 'connect-result') {
     isConnected = msg.success;
     dbName = msg.dbName || '';
+    driverType = msg.driverType || '';
     updateGlobalStatus();
     renderCells(); // Refresh to show connect/disconnect buttons and errors
+  }
+
+  if (msg.type === 'recent-connections') {
+    recentConnections = msg.connections || [];
+    const dl = document.getElementById('recent-conns');
+    if (dl) {
+      dl.innerHTML = recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+    } else {
+      renderCells(); // Force render to create datalist if not there
+    }
   }
 
   if (msg.type === 'disconnect-result') {
     isConnected = false;
     dbName = '';
+    driverType = '';
     updateGlobalStatus();
     renderCells();
   }
@@ -348,53 +450,86 @@ window.addEventListener('message', event => {
     if (msg.error) {
       outputHtml += '<div class="output-meta"><span class="meta-tag tag-err">ERROR</span> ' + ms + '</div><div class="output-error">' + escapeHtml(msg.error) + '</div>';
     } else if (msg.rows && msg.rows.length > 0) {
-      const headers = msg.fields ? msg.fields.map((f:any)=>f.name) : Object.keys(msg.rows[0]);
-      let metaInfo = msg.rows.length + ' row' + (msg.rows.length !== 1 ? 's' : '');
-      if (msg.hasMore) {
-        metaInfo += ' (showing first ' + (msg.maxRows || msg.rows.length) + ', results truncated)';
-      }
-      outputHtml += '<div class="output-meta"><span class="meta-tag tag-ok">' + escapeHtml(msg.command) + '</span> ' + metaInfo + ' • ' + ms + '</div>';
-      if (msg.hasMore) {
-        outputHtml += '<div style="padding:6px 16px; background:var(--warning-light); color:#92400e; font-size:12px; border-bottom:1px solid var(--border-color);"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-3px; margin-right:4px;"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line></svg> Results truncated. Increase <code>sqlNotebook.maxRows</code> in settings or refine your query.</div>';
-      }
-      outputHtml += '<div class="output-table-wrapper"><table class="output-table"><thead><tr>';
-      headers.forEach((h: string) => outputHtml += '<th>' + escapeHtml(h) + '</th>');
-      outputHtml += '</tr></thead><tbody>';
-      
-      msg.rows.forEach((row: any) => {
-        outputHtml += '<tr>';
-        headers.forEach((h: string) => {
-          const val = row[h];
-          if (val === null || val === undefined) outputHtml += '<td class="val-null">NULL</td>';
-          else outputHtml += '<td>' + escapeHtml(String(val)) + '</td>';
-        });
-        outputHtml += '</tr>';
-      });
-      outputHtml += '</tbody></table></div>';
+      outputHtml += renderAdvancedTableHtml(idx, msg, escapeHtml);
     } else {
       outputHtml += '<div class="output-meta"><span class="meta-tag tag-ok">' + escapeHtml(msg.command || 'OK') + '</span> ' + (msg.rowCount || 0) + ' row' + (msg.rowCount !== 1 ? 's' : '') + ' affected • ' + ms + '</div><div style="padding:16px; color:var(--text-muted); font-style:italic; font-size:13px;">Query executed successfully. No rows returned.</div>';
     }
 
     outputHtml += '</div>';
     cells[idx]._output = outputHtml;
+    cells[idx]._outputData = msg;
     renderCells();
   }
 
   if (msg.type === 'schema-load-result') {
+    const cell = cells[msg.cellIndex];
+    if (cell) cell._schemaData = msg;
     handleSchemaLoadResult(msg, escapeHtml);
   }
 
   if (msg.type === 'chart-aggregate-result') {
-    // We hack the msg to fix the cellIndex so handleChartAggregateResult updates the correct DOM node
-    msg.cellIndex = msg.chartIndex;
+    const cell = cells[msg.chartIndex];
+    if (cell) cell._chartData = msg;
     handleChartAggregateResult(msg, escapeHtml);
   }
 
   if (msg.type === 'summary-aggregate-result') {
-    msg.cellIndex = msg.summaryIndex;
+    const cell = cells[msg.summaryIndex];
+    if (cell) cell._summaryData = msg;
     handleSummaryAggregateResult(msg, escapeHtml);
+  }
+
+  if (msg.type === 'profile-column-result') {
+    const { cellIndex, column, columnType, rows, error } = msg;
+    const root = document.getElementById(`sqlnb-advanced-table-${cellIndex}`);
+    if (root) {
+        const popups = root.querySelectorAll(`.sqlnb-profile-popup[data-profile-popup="${escapeHtml(column)}"]`);
+        popups.forEach((popup: any) => {
+            if (popup.style.display !== 'none') {
+                const content = popup.querySelector('.sqlnb-profile-content');
+                if (content) {
+                    if (error) {
+                        content.innerHTML = `<div style="color:#dc2626;">Error: ${escapeHtml(error)}</div>`;
+                    } else if (rows && rows.length > 0) {
+                        const profileRow = rows[0];
+                        const totalRows = Number(profileRow['_sqlnb_total_rows'] || 0);
+                        const html = defaultProfilerViewBuilder.renderTable(profileRow, { [column]: columnType }, totalRows, escapeHtml);
+                        content.innerHTML = html;
+                    }
+                }
+            }
+        });
+    }
   }
 });
 
+// Event Delegation for all buttons
+document.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const btn = target.closest('button[data-action]');
+  if (!btn) return;
+  const action = btn.getAttribute('data-action');
+  const idxStr = btn.getAttribute('data-idx');
+  const idx = idxStr ? parseInt(idxStr, 10) : -1;
+  const typeStr = btn.getAttribute('data-type');
+  
+  if (action === 'connectDb') (window as any).connectDb(idx);
+  else if (action === 'disconnectDb') (window as any).disconnectDb();
+  else if (action === 'runSql') (window as any).runSql(idx);
+  else if (action === 'cancelSql') (window as any).cancelSql();
+  else if (action === 'addCell' && typeStr) (window as any).addCell(typeStr);
+  else if (action === 'deleteCell') (window as any).deleteCell(idx);
+  else if (action === 'moveCellUp') (window as any).moveCell(idx, -1);
+  else if (action === 'moveCellDown') (window as any).moveCell(idx, 1);
+  else if (action === 'summaryRun') (window as any).summaryRun(idx);
+  else if (action === 'chartRun') (window as any).chartRun(idx);
+  else if (action === 'schemaRun') (window as any).schemaLoad(idx);
+  else if (action === 'toggleWiki') {
+    if (cells[idx]) {
+      cells[idx]._showWiki = !cells[idx]._showWiki;
+      renderCells();
+    }
+  }
+});
 // Kick off first render
 renderApp();

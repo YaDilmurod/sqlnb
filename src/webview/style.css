@@ -143,6 +143,9 @@ body {
   padding: 4px 10px;
   border-radius: var(--border-radius-sm);
   margin-right: auto;
+  display: inline-flex;
+  align-items: center;
+  line-height: 1;
 }
 
 .badge-sql { background: var(--primary-light); color: var(--primary); }
@@ -153,6 +156,7 @@ body {
 
 .cell-actions {
   display: flex;
+  align-items: center;
   gap: 6px;
 }
 

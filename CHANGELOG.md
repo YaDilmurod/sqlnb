@@ -2,6 +2,11 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.1.1]
+- **UX**: Enhanced UI alignments, adjusted markdown/table padding, and fixed scroll chaining issues.
+- **Feature**: Automatically saves and populates a recent connections list using local datalists for quicker database connection reuse.
+- **Fix**: Re-engineered table header popups to overlay correctly on small tables by breaking out of overflow clipping contexts.
+
 ## [0.1.0]
 - **Architecture:** Complete migration from the restrictive VS Code Notebook API to a high-performance `CustomTextEditorProvider` architecture.
 - **Performance:** Replaced monolithic multiple webview renderers with a single, highly-optimized webview that dramatically improves load times and reduces memory usage.

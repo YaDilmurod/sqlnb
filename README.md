@@ -2,12 +2,6 @@
 
 **Jupyter-style SQL notebooks inside VS Code.** Connect to PostgreSQL or DuckDB, write queries, and visualize results — all without leaving your editor.
 
-<img src="images/table.jpg" width="500" alt="Smart DBeaver-style Table View">
-<br>
-<img src="images/chart.jpg" width="500" alt="Interactive ECharts">
-
----
-
 ## Getting Started
 
 ```
