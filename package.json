@@ -3,11 +3,14 @@
     "displayName": "SQL Notebook EDA",
     "description": "A lightweight Jupyter-style SQL notebook for PostgreSQL — built for data analysts",
     "icon": "images/icon.png",
-    "version": "0.0.61",
+    "version": "0.1.0",
     "publisher": "SQLNB",
     "engines": {
         "vscode": "^1.80.0"
     },
+    "activationEvents": [
+        "onCustomEditor:sqlnb.editor"
+    ],
     "categories": [
         "Notebooks",
         "Data Science"
@@ -18,88 +21,16 @@
     },
     "main": "./out/extension/extension.js",
     "contributes": {
-        "notebookRenderer": [
+        "customEditors": [
             {
-                "id": "sqlnb-table-renderer",
-                "displayName": "SQL Notebook Table Renderer",
-                "entrypoint": "./out/webview/renderer.mjs",
-                "mimeTypes": [
-                    "application/vnd.sqlnb.table"
-                ],
-                "requiresMessaging": "optional"
-            },
-            {
-                "id": "sqlnb-chart-renderer",
-                "displayName": "SQL Notebook Chart Renderer",
-                "entrypoint": "./out/webview/chart-renderer.mjs",
-                "mimeTypes": [
-                    "application/vnd.sqlnb.chart"
-                ],
-                "requiresMessaging": "optional"
-            },
-            {
-                "id": "sqlnb-summary-renderer",
-                "displayName": "SQL Notebook Summary Renderer",
-                "entrypoint": "./out/webview/summary-renderer.mjs",
-                "mimeTypes": [
-                    "application/vnd.sqlnb.summary"
-                ],
-                "requiresMessaging": "optional"
-            },
-            {
-                "id": "sqlnb-schema-renderer",
-                "displayName": "SQL Notebook Schema Renderer",
-                "entrypoint": "./out/webview/schema-renderer.mjs",
-                "mimeTypes": [
-                    "application/vnd.sqlnb.schema"
-                ],
-                "requiresMessaging": "optional"
-            },
-            {
-                "id": "sqlnb-connection-renderer",
-                "displayName": "SQL Notebook Connection Renderer",
-                "entrypoint": "./out/webview/connection-renderer.mjs",
-                "mimeTypes": [
-                    "application/vnd.sqlnb.connection"
-                ],
-                "requiresMessaging": "optional"
-            }
-        ],
-        "languages": [
-            {
-                "id": "chart",
-                "aliases": [
-                    "Chart"
-                ]
-            },
-            {
-                "id": "summary",
-                "aliases": [
-                    "Summary"
-                ]
-            },
-            {
-                "id": "schema",
-                "aliases": [
-                    "Schema"
-                ]
-            },
-            {
-                "id": "connection",
-                "aliases": [
-                    "Connection"
-                ]
-            }
-        ],
-        "notebooks": [
-            {
-                "type": "sql-notebook",
+                "viewType": "sqlnb.editor",
                 "displayName": "SQL Notebook",
                 "selector": [
                     {
                         "filenamePattern": "*.sqlnb"
                     }
-                ]
+                ],
+                "priority": "default"
             }
         ],
         "commands": [
@@ -112,52 +43,14 @@
                 "title": "SQL Notebook: Disconnect"
             },
             {
-                "command": "sqlNotebook.showSchema",
-                "title": "SQL Notebook: Show Schema (Tables & Columns)",
-                "icon": "$(database)"
-            },
-            {
                 "command": "sqlNotebook.exportCsv",
                 "title": "SQL Notebook: Export Last Result to CSV"
             },
             {
                 "command": "sqlNotebook.newNotebook",
                 "title": "SQL Notebook: New Notebook"
-            },
-            {
-                "command": "sqlNotebook.addChart",
-                "title": "SQL Notebook: Add Chart Cell",
-                "icon": "$(graph)"
-            },
-            {
-                "command": "sqlNotebook.addSummary",
-                "title": "SQL Notebook: Add Summary Cell",
-                "icon": "$(list-flat)"
-            },
-            {
-                "command": "sqlNotebook.sortData",
-                "title": "SQL Notebook: Sort Table Server-Side"
             }
         ],
-        "menus": {
-            "notebook/toolbar": [
-                {
-                    "command": "sqlNotebook.addChart",
-                    "group": "navigation",
-                    "when": "notebookType == 'sql-notebook'"
-                },
-                {
-                    "command": "sqlNotebook.addSummary",
-                    "group": "navigation",
-                    "when": "notebookType == 'sql-notebook'"
-                },
-                {
-                    "command": "sqlNotebook.showSchema",
-                    "group": "navigation",
-                    "when": "notebookType == 'sql-notebook'"
-                }
-            ]
-        },
         "configuration": {
             "title": "SQL Notebook",
             "properties": {
@@ -180,7 +73,6 @@
         }
     },
     "scripts": {
-
         "vscode:prepublish": "npm run compile",
         "compile": "npm run compile:extension && npm run compile:webview",
         "watch": "tsc -watch -p ./",

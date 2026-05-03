@@ -2,6 +2,13 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.1.0]
+- **Architecture:** Complete migration from the restrictive VS Code Notebook API to a high-performance `CustomTextEditorProvider` architecture.
+- **Performance:** Replaced monolithic multiple webview renderers with a single, highly-optimized webview that dramatically improves load times and reduces memory usage.
+- **UX:** Completely revamped the UI using professional SVG icons instead of emojis, aligning with VS Code UI standards.
+- **Reliability:** Fixed infinite document save re-rendering loops, template literal string escaping bugs, and regex query detection flaws.
+- **Feature:** Full feature parity with the legacy extension achieved, including real-time DuckDB/PostgreSQL support, schema browsing, ECharts integration, data profiling, query cancellation, and CSV exports.
+
 ## [0.0.61]
 - **Feature:** Replaced monolithic table sorting header with a dedicated sort icon/dropdown menu for a cleaner interface.
 - **Feature:** Excel-style cell selection — click and drag over table cells to view live aggregations (Avg, Count, Sum, Min, Max) in the status bar.

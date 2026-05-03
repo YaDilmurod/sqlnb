@@ -52,4 +52,10 @@ export interface IDatabaseDriver {
    * Returns undefined if not applicable (e.g., DuckDB).
    */
   getBackendPid(): Promise<number | undefined>;
+
+  /**
+   * Execute a raw query directly (used for chart/schema aggregation).
+   * Returns rows without cursor wrapping or LIMIT protection.
+   */
+  executeRaw(query: string): Promise<{ rows: Record<string, any>[] }>;
 }

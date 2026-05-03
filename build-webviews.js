@@ -1,18 +1,43 @@
 const esbuild = require('esbuild');
+const fs = require('fs');
+const path = require('path');
 
-esbuild.build({
+const watch = process.argv.includes('--watch');
+
+const options = {
     entryPoints: [
-        'src/webview/chart-renderer.mts',
-        'src/webview/connection-renderer.mts',
-        'src/webview/renderer.mts',
-        'src/webview/schema-renderer.mts',
-        'src/webview/summary-renderer.mts'
+        './src/webview/main.ts'
     ],
     bundle: true,
-    outdir: 'out/webview',
-    outExtension: { '.js': '.mjs' },
-    format: 'esm',
-    target: 'es2020',
-    minify: false,
+    outdir: './out/webview',
+    platform: 'browser',
+    format: 'iife',
     sourcemap: true,
-}).catch(() => process.exit(1));
+    minify: !watch,
+};
+
+async function build() {
+    // Ensure out/webview exists
+    const outDir = path.join(__dirname, 'out', 'webview');
+    if (!fs.existsSync(outDir)) {
+        fs.mkdirSync(outDir, { recursive: true });
+    }
+
+    // Copy CSS
+    fs.copyFileSync(
+        path.join(__dirname, 'src', 'webview', 'style.css'),
+        path.join(outDir, 'style.css')
+    );
+    console.log('Copied style.css');
+
+    if (watch) {
+        const ctx = await esbuild.context(options);
+        await ctx.watch();
+        console.log('Watching webview changes...');
+    } else {
+        await esbuild.build(options);
+        console.log('Webview build complete');
+    }
+}
+
+build().catch(() => process.exit(1));

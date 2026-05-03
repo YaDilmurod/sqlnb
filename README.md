@@ -29,10 +29,10 @@ You can also run `Cmd+Shift+P` → `SQL Notebook: New Notebook`.
 > Supports **PostgreSQL** (`postgres://...`) and **DuckDB** (local `.duckdb` files).
 
 **4. Write & Run SQL**
-Write SQL in any code cell and hit **▶ Run**. Results appear as a sortable, paginated table.
+Write SQL in any code cell and hit **Run**. Results appear as a sortable, paginated table.
 
 **5. Add Visualizations**
-Click **📊 Add Chart Cell** in the toolbar → pick X/Y axes → click **▶ Run Chart**.
+Click **+ Chart** in the toolbar → pick X/Y axes → click **Run Chart**.
 
 ---
 
@@ -41,7 +41,7 @@ Click **📊 Add Chart Cell** in the toolbar → pick X/Y axes → click **▶ R
 | Feature | What it does |
 |---|---|
 | **Notebook Format** | Mix Markdown + SQL + Charts in `.sqlnb` files |
-| **Schema Browser** | Browse tables, views, and materialized views with toggle filters (📄 / 👁 / 🧊) |
+| **Schema Browser** | Browse tables, views, and materialized views with toggle filters |
 | **Smart Tables** | Server-side cursors for large datasets — zero RAM spikes |
 | **Server-Side Sort** | Click column headers to sort millions of rows on the DB side |
 | **Charts** | Bar, Line, Scatter, Pie via ECharts — with multiple Y axes, separate axes, and log scale |
