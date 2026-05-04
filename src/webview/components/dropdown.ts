@@ -111,8 +111,7 @@ export function initCustomAutocompletes(recentConnections: string[]) {
             menu = document.createElement('div');
             menu.className = 'custom-select-menu';
             
-            const val = inputEl.value.toLowerCase();
-            const filtered = recentConnections; // show all when clicked arrow, or filter on typing?
+            const filtered = recentConnections;
 
             filtered.forEach(conn => {
                 const item = document.createElement('div');

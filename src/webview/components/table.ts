@@ -20,7 +20,7 @@ function oidToType(oid: number) {
 }
 
 export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: any) => string): string {
-    const { rows, fields, elapsedMs, fetchedCount, hasMore, maxRows, currentSort, totalEstimatedRows } = msg;
+    const { rows, fields, elapsedMs, hasMore, maxRows, currentSort } = msg;
     if (!rows || rows.length === 0) return '<div>No rows</div>';
 
     const originalHeaders = fields ? fields.map((f: any) => f.name) : Object.keys(rows[0]);

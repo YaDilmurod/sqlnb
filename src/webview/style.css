@@ -50,42 +50,6 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
-/* ── Top Bar ── */
-.topbar {
-  position: sticky;
-  top: 0;
-  z-index: 100;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 24px;
-  background-color: rgba(255, 255, 255, 0.85);
-  backdrop-filter: blur(12px);
-  border-bottom: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-}
-
-.topbar-title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--text-main);
-}
-
-.global-status {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 13px;
-  font-weight: 500;
-  padding: 6px 12px;
-  border-radius: 20px;
-}
-
-.global-status.disconnected {
-  background-color: var(--bg-surface-inset);
-  color: var(--text-muted);
-}
-
 /* ── Wiki Popup ── */
 .sqlnb-wiki-popup {
   display: none;
@@ -99,18 +63,6 @@ body {
   width: 450px;
   max-height: 500px;
   overflow-y: auto;
-}
-
-.global-status.connected {
-  background-color: var(--success-light);
-  color: var(--success);
-}
-
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background-color: currentColor;
 }
 
 /* ── Notebook Container ── */
@@ -149,7 +101,7 @@ body {
   background-color: var(--bg-surface-hover);
   border-bottom: 1px solid var(--border-color);
   position: sticky;
-  top: 60px;
+  top: 0;
   z-index: 10;
   border-top-left-radius: var(--border-radius-md);
   border-top-right-radius: var(--border-radius-md);
@@ -327,7 +279,7 @@ body {
   display: flex;
   gap: 12px;
 }
-.conn-select, .conn-input {
+.conn-input {
   padding: 10px 14px;
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
@@ -339,15 +291,9 @@ body {
   outline: none;
 }
 .conn-input { flex: 1; font-family: var(--font-mono); }
-.conn-select:focus, .conn-input:focus { 
+.conn-input:focus { 
   border-color: var(--primary); 
   box-shadow: 0 0 0 2px var(--primary-light);
-}
-.conn-select {
-  appearance: none;
-  background: var(--bg-surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>') no-repeat right 12px center;
-  padding-right: 32px;
-  cursor: pointer;
 }
 
 .btn-primary {
@@ -471,47 +417,7 @@ body {
 .tag-ok { background: var(--success-light); color: var(--success); }
 .tag-err { background: var(--danger-light); color: var(--danger); }
 
-.output-table-wrapper {
-  max-height: 400px;
-  overflow: auto;
-}
 
-.output-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 13px;
-  font-family: var(--font-sans);
-}
-
-.output-table th {
-  position: sticky;
-  top: 0;
-  background: var(--bg-surface-hover);
-  color: var(--text-muted);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: 8px 16px;
-  text-align: left;
-  border-bottom: 2px solid var(--border-color);
-  z-index: 10;
-}
-
-.output-table td {
-  padding: 8px 16px;
-  border-bottom: 1px solid var(--border-color);
-  color: var(--text-main);
-  white-space: nowrap;
-}
-
-.output-table tr:hover td {
-  background-color: var(--bg-surface-hover);
-}
-
-.val-null {
-  color: var(--text-subtle);
-  font-style: italic;
-}
 
 .output-error {
   padding: 16px;
@@ -572,7 +478,6 @@ body {
   right: 20%;
   height: 2px;
   background: transparent;
-  transition: background 0.2s;
   border-radius: 1px;
 }
 
@@ -602,7 +507,7 @@ body {
   font-weight: 600;
   font-size: 11px;
   font-family: var(--font-sans);
-  transition: all 0.15s;
+
   white-space: nowrap;
 }
 

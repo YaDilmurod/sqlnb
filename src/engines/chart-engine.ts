@@ -2,53 +2,9 @@
  * Chart visualization engine for SQL Notebook.
  * Uses Apache ECharts for stunning, interactive visualizations.
  * 
- * Charts are now rendered via a custom Notebook Renderer that communicates
- * with the extension host to perform server-side GROUP BY aggregation,
+ * Charts perform server-side GROUP BY aggregation,
  * enabling accurate charting of datasets with millions of rows.
  */
-
-export interface StoredResult {
-  key: string;
-  label: string;
-  rows: Record<string, any>[];
-  columns: string[];
-  query: string;
-}
-
-/**
- * Payload sent to the chart renderer. Contains only metadata (columns, labels)
- * so the renderer can populate its dropdowns. Actual chart data is fetched
- * on-demand via messaging from the renderer back to the extension host.
- */
-export interface ChartRendererPayload {
-  datasets: {
-    key: string;
-    label: string;
-    columns: string[];
-    sampleRows: Record<string, any>[];
-  }[];
-  telemetry: any;
-}
-
-/**
- * Build the payload that gets sent to the chart renderer.
- * We include a small sample of rows (first 20) so the renderer can detect
- * column types (numeric vs string vs date) for smart defaults.
- */
-export function buildChartPayload(
-  results: StoredResult[],
-  telemetryContext?: any
-): ChartRendererPayload {
-  return {
-    datasets: results.map(r => ({
-      key: r.key,
-      label: r.label,
-      columns: r.columns,
-      sampleRows: r.rows.slice(0, 20),
-    })),
-    telemetry: telemetryContext || {},
-  };
-}
 
 /**
  * Build a PostgreSQL/DuckDB aggregation query that wraps the user's original query.

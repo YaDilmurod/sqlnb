@@ -55,56 +55,10 @@ export function shutdownTelemetry(): void {
     }
 }
 
-export function getTelemetryContext() {
-    return {
-        enabled: _telemetryEnabled,
-        clientId: _clientId,
-        sessionId: _sessionId,
-        apiKey: POSTHOG_API_KEY,
-        host: POSTHOG_HOST,
-        version: _extensionVersion
-    };
-}
-
-// ─── Public tracking functions ────────────────────────────────────────────────
+// ── Public tracking functions ────────────────────────────────────────────────
 
 export function trackActivation(): void {
     _capture('Extension Activated');
-}
-
-export function trackConnect(): void {
-    _capture('db connected');
-}
-
-export function trackDisconnect(): void {
-    _capture('Database Disconnected');
-}
-
-export function trackQueryRun(elapsedMs?: number): void {
-    const params: Record<string, any> = {};
-    if (elapsedMs !== undefined) {
-        params['duration_ms'] = elapsedMs;
-        if (elapsedMs < 500)       { params['qt_bucket'] = 'fast'; }
-        else if (elapsedMs < 3000) { params['qt_bucket'] = 'medium'; }
-        else                       { params['qt_bucket'] = 'slow'; }
-    }
-    _capture('sql run success', params);
-}
-
-export function trackChartAdded(): void {
-    _capture('Chart Added');
-}
-
-export function trackExportCsv(): void {
-    _capture('Exported CSV');
-}
-
-export function trackShowSchema(): void {
-    _capture('Schema Viewed');
-}
-
-export function trackNewNotebook(): void {
-    _capture('New Notebook Created');
 }
 
 // ─── Core Capture ─────────────────────────────────────────────────────────────────

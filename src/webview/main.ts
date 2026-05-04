@@ -20,7 +20,7 @@ interface Cell {
   _chartData?: any; // Chart cache
   _schemaData?: any; // Schema cache
   _summaryData?: any; // Profiler cache
-  _showWiki?: boolean; // Whether wiki is visible
+
 }
 
 let cells: Cell[] = [];
@@ -106,16 +106,45 @@ function buildInsertDivider(pos: number): string {
 
 // ── DOM Manipulation ──
 
-function updateGlobalStatus() {
-  const statusEl = document.getElementById('global-status');
-  if (!statusEl) return;
-  if (isConnected) {
-    statusEl.className = 'global-status connected';
-    statusEl.innerHTML = '<div class="status-dot"></div> ' + escapeHtml(dbName);
-  } else {
-    statusEl.className = 'global-status disconnected';
-    statusEl.innerHTML = '<div class="status-dot"></div> Disconnected';
-  }
+
+
+function updateRunButtonStates() {
+  const actions = ['runSql', 'chartRun', 'summaryRun', 'schemaRun'];
+  actions.forEach(action => {
+    document.querySelectorAll(`button[data-action="${action}"]`).forEach((btn: any) => {
+      btn.disabled = !isConnected;
+    });
+  });
+}
+
+function updateConnectionCellUI() {
+  cells.forEach((cell, idx) => {
+    if (cell.type !== 'connection') return;
+    const connRow = document.getElementById('conn-input-' + idx)?.parentElement;
+    if (!connRow) return;
+    const existingBtn = connRow.querySelector('button[data-action="connectDb"], button[data-action="disconnectDb"]');
+    if (existingBtn) existingBtn.remove();
+    const newBtn = document.createElement('button');
+    newBtn.className = 'btn-primary';
+    if (isConnected) {
+      newBtn.style.background = 'var(--danger)';
+      newBtn.setAttribute('data-action', 'disconnectDb');
+      newBtn.textContent = 'Disconnect';
+    } else {
+      const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
+      const hasValue = inp && !!inp.value.trim();
+      newBtn.id = 'conn-btn-' + idx;
+      newBtn.setAttribute('data-action', 'connectDb');
+      newBtn.setAttribute('data-idx', idx.toString());
+      newBtn.textContent = 'Connect';
+      if (!hasValue) {
+        newBtn.disabled = true;
+        newBtn.style.opacity = '0.4';
+        newBtn.style.cursor = 'not-allowed';
+      }
+    }
+    connRow.appendChild(newBtn);
+  });
 }
 
 function renderApp() {
@@ -126,10 +155,9 @@ function renderApp() {
     `<button class="btn-add" data-action="addCell" data-type="${t}">+ ${CELL_TYPES[t].label}</button>`
   ).join('');
 
-  app.innerHTML = `<div class="topbar"><div class="topbar-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>SQL Notebook</div><div id="global-status" class="global-status disconnected"><div class="status-dot"></div> Disconnected</div></div><div class="cells-container" id="cells"></div><div class="add-cell-bar">${addButtons}</div>`;
+  app.innerHTML = `<div class="cells-container" id="cells"></div><div class="add-cell-bar">${addButtons}</div>`;
 
   renderCells();
-  updateGlobalStatus();
 }
 
 function renderCells() {
@@ -158,9 +186,11 @@ function renderCells() {
       toolbar += '<button class="btn-action btn-run" data-action="runSql" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
       toolbar += '<button class="btn-icon" data-action="toggleWiki" data-idx="' + idx + '" title="Wiki / Examples"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></button>';
     }
-    if (idx > 0) toolbar += '<button class="btn-icon" data-action="moveCellUp" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>';
-    if (idx < cells.length - 1) toolbar += '<button class="btn-icon" data-action="moveCellDown" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg></button>';
-    toolbar += '<button class="btn-icon btn-delete" data-action="deleteCell" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>';
+    if (cell.type !== 'connection') {
+      if (idx > 0) toolbar += '<button class="btn-icon" data-action="moveCellUp" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>';
+      if (idx < cells.length - 1) toolbar += '<button class="btn-icon" data-action="moveCellDown" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg></button>';
+      toolbar += '<button class="btn-icon btn-delete" data-action="deleteCell" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>';
+    }
     toolbar += '</div></div>';
 
     // 2. Content Area
@@ -242,12 +272,12 @@ function renderCells() {
       }
     } else if (cell.type === 'connection') {
       const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
-      const connBtn = document.getElementById('conn-btn-' + idx) as HTMLButtonElement;
       if (inp) {
         inp.addEventListener('input', () => {
           cells[idx].content = inp.value;
           save();
-          // Enable/disable connect button based on input
+          // Enable/disable connect button based on input (dynamic lookup)
+          const connBtn = document.getElementById('conn-btn-' + idx) as HTMLButtonElement;
           if (connBtn) {
             if (inp.value.trim()) {
               connBtn.disabled = false;
@@ -353,6 +383,9 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).insertCellAt = (pos: number, type: string) => {
+  // Prevent inserting above the connection cell
+  const connIdx = cells.findIndex(c => c.type === 'connection');
+  if (connIdx >= 0 && pos <= connIdx) pos = connIdx + 1;
   const newCell: Cell = { type, content: type === 'sql' ? '' : type === 'markdown' ? '# New block' : '' };
   cells.splice(pos, 0, newCell);
   save();
@@ -413,6 +446,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).deleteCell = (idx: number) => {
+  if (cells[idx]?.type === 'connection') return; // Connection cell cannot be deleted
   cells.splice(idx, 1);
   save();
   renderCells();
@@ -421,6 +455,9 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 (window as any).moveCell = (idx: number, dir: number) => {
   const target = idx + dir;
   if (target < 0 || target >= cells.length) return;
+  // Prevent moving the connection cell or moving anything above it
+  if (cells[idx]?.type === 'connection') return;
+  if (cells[target]?.type === 'connection') return;
   const temp = cells[idx];
   cells[idx] = cells[target];
   cells[target] = temp;
@@ -457,7 +494,8 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   const cellName = cell.name || `table_${idx}`;
 
   cell._output = '<div class="output-area"><div class="output-meta"><svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px; margin-right:6px"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Running... <button class="btn-action" style="margin-left:auto;color:var(--danger);" data-action="cancelSql"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Cancel</button></div></div>';
-  renderCells();
+  const outputEl = document.getElementById('output-' + idx);
+  if (outputEl) outputEl.innerHTML = cell._output;
   vscode.postMessage({ type: 'execute-sql', cellIndex: idx, cellName: cellName, query: cell.content });
 };
 
@@ -483,7 +521,13 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   const ta = document.getElementById('md-ta-' + idx) as HTMLTextAreaElement;
   if (ta) cells[idx].content = ta.value;
   save();
-  renderCells();
+  const preview = document.getElementById('md-preview-' + idx);
+  const editDiv = document.getElementById('md-edit-' + idx);
+  if (preview) {
+    preview.innerHTML = renderMarkdown(cells[idx].content) || '<em>Double-click to edit...</em>';
+    preview.style.display = 'block';
+  }
+  if (editDiv) editDiv.style.display = 'none';
 };
 
 // ── Message Listener ──
@@ -513,8 +557,9 @@ window.addEventListener('message', event => {
     isConnected = msg.success;
     dbName = msg.dbName || '';
     driverType = msg.driverType || '';
-    updateGlobalStatus();
-    renderCells();
+
+    updateConnectionCellUI();
+    updateRunButtonStates();
     
     // Show connection message
     const connIdx = cells.findIndex((c: any) => c.type === 'connection');
@@ -538,7 +583,7 @@ window.addEventListener('message', event => {
       if (c.type === 'connection') {
         const dl = document.getElementById('recent-conns-' + i);
         if (dl) {
-          dl.innerHTML = recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+          dl.innerHTML = recentConnections.map(conn => `<option value="${escapeHtml(conn)}"></option>`).join('');
           updated = true;
         }
       }
@@ -550,8 +595,9 @@ window.addEventListener('message', event => {
     isConnected = false;
     dbName = '';
     driverType = '';
-    updateGlobalStatus();
-    renderCells();
+
+    updateConnectionCellUI();
+    updateRunButtonStates();
   }
 
   if (msg.type === 'sql-result') {
@@ -576,7 +622,11 @@ window.addEventListener('message', event => {
     outputHtml += '</div>';
     cells[idx]._output = outputHtml;
     cells[idx]._outputData = msg;
-    renderCells();
+    const outputEl = document.getElementById('output-' + idx);
+    if (outputEl) {
+      outputEl.innerHTML = outputHtml;
+      setTimeout(() => setupAdvancedTableListeners(idx, msg, escapeHtml), 0);
+    }
   }
 
   if (msg.type === 'schema-load-result') {

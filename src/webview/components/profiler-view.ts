@@ -11,35 +11,31 @@ export const NumericViewStrategy: ProfileViewStrategy = {
         if (cols.length === 0) return '';
         
         const fmtNum = (v: any) => {
-            if (v === null || v === undefined || v === '') return '';
+            if (v === null || v === undefined || v === '') return '—';
             const n = Number(v);
-            if (isNaN(n)) return '';
+            if (isNaN(n)) return '—';
             return Number(n.toFixed(2)).toLocaleString();
         };
 
-        let html = `<div style="margin-bottom:16px;">`;
-        html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="sqlnb-tag tag-num" style="font-size:12px;padding:3px 10px;">Numeric</span><span style="font-size:12px;color:#888;">${cols.length} column${cols.length > 1 ? 's' : ''}</span></div>`;
-        html += '<table class="sqlnb-table"><thead><tr>';
-        html += '<th>Column</th><th>Null %</th><th>Distinct</th><th>Min</th><th>Max</th><th>Mean</th><th>Sum</th><th>25%</th><th>50%</th><th>75%</th>';
-        html += '</tr></thead><tbody>';
+        let html = '';
         for (const col of cols) {
             const nulls = Number(row[col + '__nulls'] || 0);
             const distinct = Number(row[col + '__distinct'] || 0);
             const nullPct = totalRows > 0 ? (nulls / totalRows * 100).toFixed(1) + '%' : '0%';
-            html += `<tr>
-                <td><strong>${esc(col)}</strong></td>
-                <td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td>
-                <td>${distinct.toLocaleString()}</td>
-                <td>${fmtNum(row[col + '__min'])}</td>
-                <td>${fmtNum(row[col + '__max'])}</td>
-                <td>${fmtNum(row[col + '__mean'])}</td>
-                <td>${fmtNum(row[col + '__sum'])}</td>
-                <td>${fmtNum(row[col + '__p25'])}</td>
-                <td>${fmtNum(row[col + '__p50'])}</td>
-                <td>${fmtNum(row[col + '__p75'])}</td>
-            </tr>`;
+            html += `<div style="margin-bottom:12px;">`;
+            html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 12px;background:#f8fafc;border-bottom:1px solid #e5e7eb;"><strong style="font-size:13px;">${esc(col)}</strong><span class="sqlnb-tag tag-num" style="font-size:10px;padding:2px 8px;margin-left:auto;">Numeric</span></div>`;
+            html += '<table class="sqlnb-table" style="width:100%;">';
+            html += `<tr><td style="color:#6b7280;font-weight:600;width:40%;">Null %</td><td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Distinct</td><td>${distinct.toLocaleString()}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Min</td><td>${fmtNum(row[col + '__min'])}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Max</td><td>${fmtNum(row[col + '__max'])}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Mean</td><td>${fmtNum(row[col + '__mean'])}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Sum</td><td>${fmtNum(row[col + '__sum'])}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">25th %</td><td>${fmtNum(row[col + '__p25'])}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">50th %</td><td>${fmtNum(row[col + '__p50'])}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">75th %</td><td>${fmtNum(row[col + '__p75'])}</td></tr>`;
+            html += '</table></div>';
         }
-        html += '</tbody></table></div>';
         return html;
     }
 };
@@ -49,19 +45,15 @@ export const DateViewStrategy: ProfileViewStrategy = {
     isMatch: (val: any) => val instanceof Date || (typeof val === 'string' && !isNaN(Date.parse(val)) && val.length >= 8),
     renderGroup: (cols, row, totalRows, esc) => {
         if (cols.length === 0) return '';
-        let html = `<div style="margin-bottom:16px;">`;
-        html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="sqlnb-tag tag-date" style="font-size:12px;padding:3px 10px;">Date</span><span style="font-size:12px;color:#888;">${cols.length} column${cols.length > 1 ? 's' : ''}</span></div>`;
-        html += '<table class="sqlnb-table"><thead><tr>';
-        html += '<th>Column</th><th>Null %</th><th>Distinct</th><th>Min</th><th>Max</th><th>Range</th>';
-        html += '</tr></thead><tbody>';
+        let html = '';
         for (const col of cols) {
             const nulls = Number(row[col + '__nulls'] || 0);
             const distinct = Number(row[col + '__distinct'] || 0);
             const nullPct = totalRows > 0 ? (nulls / totalRows * 100).toFixed(1) + '%' : '0%';
-            const minVal = row[col + '__min'] ?? '';
-            const maxVal = row[col + '__max'] ?? '';
+            const minVal = row[col + '__min'] ?? '—';
+            const maxVal = row[col + '__max'] ?? '—';
             let rangeStr = '—';
-            if (minVal && maxVal) {
+            if (minVal && minVal !== '—' && maxVal && maxVal !== '—') {
                 const d1 = new Date(minVal);
                 const d2 = new Date(maxVal);
                 if (!isNaN(d1.getTime()) && !isNaN(d2.getTime())) {
@@ -71,16 +63,16 @@ export const DateViewStrategy: ProfileViewStrategy = {
                     else rangeStr = diffDays + ' days';
                 }
             }
-            html += `<tr>
-                <td><strong>${esc(col)}</strong></td>
-                <td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td>
-                <td>${distinct.toLocaleString()}</td>
-                <td>${esc(String(minVal))}</td>
-                <td>${esc(String(maxVal))}</td>
-                <td style="color:#166534;font-weight:500;">${rangeStr}</td>
-            </tr>`;
+            html += `<div style="margin-bottom:12px;">`;
+            html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 12px;background:#f8fafc;border-bottom:1px solid #e5e7eb;"><strong style="font-size:13px;">${esc(col)}</strong><span class="sqlnb-tag tag-date" style="font-size:10px;padding:2px 8px;margin-left:auto;">Date</span></div>`;
+            html += '<table class="sqlnb-table" style="width:100%;">';
+            html += `<tr><td style="color:#6b7280;font-weight:600;width:40%;">Null %</td><td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Distinct</td><td>${distinct.toLocaleString()}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Min</td><td>${esc(String(minVal))}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Max</td><td>${esc(String(maxVal))}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Range</td><td style="color:#166534;font-weight:500;">${rangeStr}</td></tr>`;
+            html += '</table></div>';
         }
-        html += '</tbody></table></div>';
         return html;
     }
 };
@@ -90,26 +82,22 @@ export const StringViewStrategy: ProfileViewStrategy = {
     isMatch: () => true, // default fallback
     renderGroup: (cols, row, totalRows, esc) => {
         if (cols.length === 0) return '';
-        let html = `<div style="margin-bottom:16px;">`;
-        html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;"><span class="sqlnb-tag tag-str" style="font-size:12px;padding:3px 10px;">Categorical</span><span style="font-size:12px;color:#888;">${cols.length} column${cols.length > 1 ? 's' : ''}</span></div>`;
-        html += '<table class="sqlnb-table"><thead><tr>';
-        html += '<th>Column</th><th>Null %</th><th>Distinct</th><th>Top Value</th><th>Top Freq</th>';
-        html += '</tr></thead><tbody>';
+        let html = '';
         for (const col of cols) {
             const nulls = Number(row[col + '__nulls'] || 0);
             const distinct = Number(row[col + '__distinct'] || 0);
             const nullPct = totalRows > 0 ? (nulls / totalRows * 100).toFixed(1) + '%' : '0%';
             const topVal = row[col + '__top'] ?? '—';
             const topFreq = row[col + '__top_freq'] != null ? Number(row[col + '__top_freq']).toLocaleString() : '—';
-            html += `<tr>
-                <td><strong>${esc(col)}</strong></td>
-                <td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td>
-                <td>${distinct.toLocaleString()}</td>
-                <td>${esc(String(topVal))}</td>
-                <td>${topFreq}</td>
-            </tr>`;
+            html += `<div style="margin-bottom:12px;">`;
+            html += `<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;padding:8px 12px;background:#f8fafc;border-bottom:1px solid #e5e7eb;"><strong style="font-size:13px;">${esc(col)}</strong><span class="sqlnb-tag tag-str" style="font-size:10px;padding:2px 8px;margin-left:auto;">Categorical</span></div>`;
+            html += '<table class="sqlnb-table" style="width:100%;">';
+            html += `<tr><td style="color:#6b7280;font-weight:600;width:40%;">Null %</td><td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Distinct</td><td>${distinct.toLocaleString()}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Top Value</td><td>${esc(String(topVal))}</td></tr>`;
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Top Freq</td><td>${topFreq}</td></tr>`;
+            html += '</table></div>';
         }
-        html += '</tbody></table></div>';
         return html;
     }
 };
