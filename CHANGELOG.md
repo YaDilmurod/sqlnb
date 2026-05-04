@@ -2,6 +2,16 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.1.3]
+- **Feature**: Chart input fields are now stylized dropdowns! Instead of typing column names manually, the notebook intelligently populates the dropdown options based on the available columns from the executed queries.
+- **UX**: Unified the design of dropdowns and inputs across all blocks (Connection, Chart, and Profiler) to match a consistent, clean notebook aesthetic.
+
+## [0.1.2]
+- **Bug Fix**: Fixed a critical issue where column sorting and profiling would fail on PostgreSQL with "column does not exist" errors due to missing query context.
+- **UX**: The Wiki / Examples section now opens as a floating tooltip popup rather than pushing down the SQL editor, maintaining your scroll context.
+- **UX**: Connecting and disconnecting from the database now smoothly updates the UI without causing the entire notebook (and your queries) to reload or flash.
+- **UX**: Cell toolbars are now "sticky", meaning they will stay pinned at the top of the screen as you scroll through long results, keeping run actions always accessible.
+
 ## [0.1.1]
 - **UX**: Enhanced UI alignments, adjusted markdown/table padding, and fixed scroll chaining issues.
 - **Feature**: Automatically saves and populates a recent connections list using local datalists for quicker database connection reuse.

@@ -6,6 +6,7 @@ declare const vscode: any;
 
 const scrollPositions = new Map<number, number>();
 const pinnedColumnsMap = new Map<number, string[]>();
+let tableAbortControllers = new Map<number, AbortController>();
 
 function oidToType(oid: number) {
     const map: Record<number, string> = {
@@ -159,7 +160,11 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
                 </tbody>
             </table>
         </div>
-        <div class="sqlnb-agg-bar" style="display:none;"></div>
+        <div class="sqlnb-agg-bar">
+            <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
+            <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>
+            <span class="sqlnb-agg-item" style="color:#888;">${elapsed}</span>
+        </div>
         ${allPopups}
     </div>`;
 }
@@ -167,6 +172,14 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
 export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (s: any) => string) {
     const root = document.getElementById(`sqlnb-advanced-table-${idx}`);
     if (!root) return;
+
+    // Abort previous listeners for this table to prevent leaks
+    if (tableAbortControllers.has(idx)) {
+        tableAbortControllers.get(idx)!.abort();
+    }
+    const ac = new AbortController();
+    tableAbortControllers.set(idx, ac);
+    const signal = ac.signal;
 
     const originalHeaders = msg.fields ? msg.fields.map((f: any) => f.name) : Object.keys(msg.rows[0] || {});
     const pinned = pinnedColumnsMap.get(idx) || [];
@@ -269,7 +282,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
     document.addEventListener('click', (e: any) => {
         if (!e.target.closest('.sqlnb-sort-btn') && !e.target.closest('.sqlnb-sort-menu')) closeAllSortMenus();
         if (!e.target.closest('.sqlnb-profile-btn') && !e.target.closest('.sqlnb-profile-popup')) closeAllProfilePopups();
-    });
+    }, { signal });
 
     // Cell selection & Aggregation
     const selectedCells = new Set<string>();
@@ -293,11 +306,25 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
     function updateAggBar() {
         const aggBar = root.querySelector('.sqlnb-agg-bar') as HTMLElement;
         if (!aggBar) return;
-        if (selectedCells.size === 0) { aggBar.style.display = 'none'; return; }
+
+        const rowCount = msg.rows ? msg.rows.length : 0;
+        const elapsed = msg.elapsedMs < 1000 ? `${msg.elapsedMs.toFixed(1)}ms` : `${(msg.elapsedMs / 1000).toFixed(2)}s`;
+        const defaultInfo = `
+            <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
+            <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>
+            <span class="sqlnb-agg-item" style="color:#888;">${elapsed}</span>`;
+
+        if (selectedCells.size === 0) {
+            aggBar.innerHTML = defaultInfo;
+            aggBar.style.display = 'flex';
+            return;
+        }
         
         const numericValues: number[] = [];
         selectedCells.forEach((key) => {
-            const [rowStr, col] = key.split(':');
+            const sepIdx = key.indexOf(':');
+            const rowStr = key.substring(0, sepIdx);
+            const col = key.substring(sepIdx + 1);
             const cell = root.querySelector(`.sqlnb-cell[data-row="${rowStr}"][data-col="${escapeHtml(col)}"]`);
             if (cell) {
                 const val = cell.getAttribute('data-val');
@@ -390,7 +417,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
         });
     });
 
-    window.addEventListener('mouseup', () => { isDragging = false; });
+    window.addEventListener('mouseup', () => { isDragging = false; }, { signal });
 
     const tc = root.querySelector('.sqlnb-table-container');
     if (tc) {

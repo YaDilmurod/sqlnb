@@ -39,7 +39,13 @@ export class DuckDbDriver implements IDatabaseDriver {
   private _rewriteCsvPaths(query: string): string {
     return query.replace(
       /\bFROM\s+'([^']+\.csv)'/gi,
-      "FROM read_csv_auto('$1', sample_size=-1)"
+      (match, filePath) => {
+        // Avoid double-wrapping if already inside a function call
+        const beforeIdx = query.indexOf(match);
+        const charBefore = beforeIdx > 0 ? query[beforeIdx - 1] : '';
+        if (charBefore === '(') return match;
+        return `FROM read_csv_auto('${filePath}', sample_size=-1)`;
+      }
     );
   }
 
@@ -71,7 +77,7 @@ export class DuckDbDriver implements IDatabaseDriver {
     const Database = this._loadDuckDb();
 
     // Create an in-memory DuckDB instance
-    this._db = await Database.create(':memory:');
+    this._db = await Database.create(_connectionString || ':memory:');
 
     // Set the working directory to the VS Code workspace root
     // so relative paths like 'data/sales.csv' resolve correctly.
@@ -100,8 +106,10 @@ export class DuckDbDriver implements IDatabaseDriver {
     if (!this._db) throw new Error('DuckDB not connected');
     query = this._rewriteCsvPaths(query);
 
+    // Strip trailing semicolons before wrapping in subquery
+    const cleanQuery = query.trim().replace(/;+$/, '');
     // DuckDB doesn't have cursors like Postgres — use LIMIT for memory safety
-    const limitedQuery = `SELECT * FROM (\n${query}\n) AS _sqlnb_limited LIMIT ${maxRows + 1}`;
+    const limitedQuery = `SELECT * FROM (\n${cleanQuery}\n) AS _sqlnb_limited LIMIT ${maxRows + 1}`;
     const rawRows: Record<string, any>[] = await this._db.all(limitedQuery);
     const rows = sanitizeRows(rawRows);
 

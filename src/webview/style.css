@@ -86,6 +86,21 @@ body {
   color: var(--text-muted);
 }
 
+/* ── Wiki Popup ── */
+.sqlnb-wiki-popup {
+  display: none;
+  position: fixed;
+  z-index: 9999;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
+  border-radius: var(--border-radius-md);
+  padding: 16px;
+  width: 450px;
+  max-height: 500px;
+  overflow-y: auto;
+}
+
 .global-status.connected {
   background-color: var(--success-light);
   color: var(--success);
@@ -118,7 +133,7 @@ body {
   border-radius: var(--border-radius-md);
   box-shadow: var(--shadow-sm);
   transition: all 0.2s ease;
-  overflow: hidden;
+  overflow: visible;
 }
 
 .cell:focus-within {
@@ -133,6 +148,11 @@ body {
   padding: 10px 16px;
   background-color: var(--bg-surface-hover);
   border-bottom: 1px solid var(--border-color);
+  position: sticky;
+  top: 60px;
+  z-index: 10;
+  border-top-left-radius: var(--border-radius-md);
+  border-top-right-radius: var(--border-radius-md);
 }
 
 .cell-badge {
@@ -151,8 +171,58 @@ body {
 .badge-sql { background: var(--primary-light); color: var(--primary); }
 .badge-md { background: var(--success-light); color: var(--success); }
 .badge-conn { background: var(--warning-light); color: var(--warning); }
-.badge-chart { background: #f3e8ff; color: #9333ea; }
-.badge-summary { background: #ffedd5; color: #ea580c; }
+.badge-schema { background: #eef2ff; color: #4f46e5; }
+.badge-chart { background: #fce7f3; color: #db2777; }
+.badge-summary { background: #dcfce3; color: #166534; }
+
+/* ── Shared Component Inner Layout ── */
+.block-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 12px 16px;
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.block-toolbar h4 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.block-toolbar .block-status {
+  font-size: 12px;
+  color: var(--text-muted);
+  margin-left: auto;
+}
+
+.block-body {
+  padding: 16px;
+  background: var(--bg-surface);
+  font-size: 13px;
+  overflow-x: auto;
+}
+
+.block-body-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+/* ── Block Label ── */
+.block-label {
+  display: block;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin-bottom: 6px;
+}
+
+.block-field {
+  margin-bottom: 12px;
+}
 
 .cell-actions {
   display: flex;
@@ -265,11 +335,20 @@ body {
   font-size: 14px;
   color: var(--text-main);
   background: var(--bg-surface);
-  transition: border-color 0.2s;
+  transition: all 0.2s;
   outline: none;
 }
 .conn-input { flex: 1; font-family: var(--font-mono); }
-.conn-select:focus, .conn-input:focus { border-color: var(--primary); }
+.conn-select:focus, .conn-input:focus { 
+  border-color: var(--primary); 
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+.conn-select {
+  appearance: none;
+  background: var(--bg-surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>') no-repeat right 12px center;
+  padding-right: 32px;
+  cursor: pointer;
+}
 
 .btn-primary {
   background-color: var(--primary);
@@ -282,6 +361,89 @@ body {
   transition: background-color 0.2s;
 }
 .btn-primary:hover { background-color: var(--primary-hover); }
+
+/* ── Custom Form Controls ── */
+.sqlnb-input, .sqlnb-select {
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  padding: 6px 10px;
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+  background: var(--bg-surface);
+  color: var(--text-main);
+  transition: all 0.2s ease;
+  font-family: var(--font-sans);
+  box-sizing: border-box;
+}
+
+.sqlnb-input:focus, .sqlnb-select:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+.sqlnb-select {
+  appearance: none;
+  background: var(--bg-surface) url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="%23666" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>') no-repeat right 10px center;
+  padding-right: 30px;
+  cursor: pointer;
+}
+
+/* ── Custom Dropdown Menus ── */
+.custom-select-container {
+  position: relative;
+  width: 100%;
+}
+
+.custom-select-trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+}
+
+.custom-select-arrow {
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+}
+
+.custom-autocomplete-container {
+  position: relative;
+  width: 100%;
+  display: flex;
+  flex: 1;
+}
+
+.custom-select-menu {
+  position: absolute;
+  z-index: 10000;
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  max-height: 250px;
+  overflow-y: auto;
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.custom-select-item {
+  padding: 8px 12px;
+  cursor: pointer;
+  color: var(--text-main);
+  transition: background 0.1s;
+}
+
+.custom-select-item:hover {
+  background: var(--bg-surface-hover);
+}
+
+.custom-select-item.selected {
+  background: var(--primary-light);
+  color: var(--primary);
+  font-weight: 600;
+}
 
 /* Table Outputs */
 .output-area {
@@ -392,3 +554,68 @@ body {
 
 @keyframes spin { 100% { transform: rotate(360deg); } }
 .spin { animation: spin 1s linear infinite; }
+
+/* ── Insert Cell Divider ── */
+.insert-cell-divider {
+  position: relative;
+  height: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: -4px 0;
+  z-index: 5;
+}
+
+.insert-cell-line {
+  position: absolute;
+  left: 20%;
+  right: 20%;
+  height: 2px;
+  background: transparent;
+  transition: background 0.2s;
+  border-radius: 1px;
+}
+
+.insert-cell-buttons {
+  display: none;
+  gap: 6px;
+  z-index: 6;
+  background: var(--bg-app);
+  padding: 0 8px;
+}
+
+.insert-cell-divider:hover .insert-cell-line {
+  background: var(--primary);
+}
+
+.insert-cell-divider:hover .insert-cell-buttons {
+  display: flex;
+}
+
+.btn-insert {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  padding: 2px 10px;
+  border-radius: 12px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 11px;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.btn-insert:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-light);
+}
+
+/* Disabled button state */
+button:disabled,
+button[disabled] {
+  opacity: 0.4 !important;
+  cursor: not-allowed !important;
+  pointer-events: none !important;
+}

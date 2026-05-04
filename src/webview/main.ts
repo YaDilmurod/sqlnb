@@ -9,6 +9,7 @@ import { renderSummaryBlock, handleSummaryAggregateResult } from './components/s
 import { renderAdvancedTableHtml, setupAdvancedTableListeners } from './components/table';
 import { defaultProfilerViewBuilder } from './components/profiler-view';
 import { renderWiki } from './components/wiki';
+import { initCustomSelects, initCustomAutocompletes } from './components/dropdown';
 
 interface Cell {
   type: string;
@@ -27,6 +28,8 @@ let isConnected = false;
 let dbName = '';
 let driverType = '';
 let recentConnections: string[] = [];
+let columnCache: Record<string, string[]> = {};
+let monacoEditors: Map<number, any> = new Map();
 
 // Helper to escape HTML to prevent XSS
 function escapeHtml(str: any): string {
@@ -68,7 +71,7 @@ function renderMarkdown(md: string): string {
     .replace(/^# (.*$)/gim, '<h1>$1</h1>')
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
     .replace(/\*(.*?)\*/g, '<em>$1</em>')
-    .replace(/```([^`]+)```/g, '<pre><code>$1</code></pre>')
+    .replace(/```([\s\S]+?)```/g, '<pre><code>$1</code></pre>')
     .replace(/`([^`]+)`/g, '<code>$1</code>')
     .split('\n')
     .map(line => {
@@ -78,6 +81,27 @@ function renderMarkdown(md: string): string {
       return '<p>' + line + '</p>';
     })
     .join('');
+}
+
+// ── Cell Type Registry ──
+// Single source of truth for all block types. Adding a new block means adding one entry here.
+const CELL_TYPES: Record<string, { label: string; badgeClass: string; needsConnection: boolean }> = {
+  connection: { label: 'Connection', badgeClass: 'badge-conn',    needsConnection: false },
+  sql:        { label: 'SQL',        badgeClass: 'badge-sql',     needsConnection: true },
+  markdown:   { label: 'Markdown',   badgeClass: 'badge-md',      needsConnection: false },
+  schema:     { label: 'Schema',     badgeClass: 'badge-schema',  needsConnection: true },
+  chart:      { label: 'Chart',      badgeClass: 'badge-chart',   needsConnection: true },
+  summary:    { label: 'Profiler',   badgeClass: 'badge-summary', needsConnection: true },
+};
+
+// Insertable cell types shown in dividers (excludes connection — only one makes sense)
+const INSERTABLE_TYPES = ['sql', 'markdown', 'chart', 'summary'] as const;
+
+function buildInsertDivider(pos: number): string {
+  const buttons = INSERTABLE_TYPES.map(t =>
+    `<button class="btn-insert" data-action="insertCell" data-pos="${pos}" data-type="${t}">+ ${CELL_TYPES[t].label}</button>`
+  ).join('');
+  return `<div class="insert-cell-line"></div><div class="insert-cell-buttons">${buttons}</div>`;
 }
 
 // ── DOM Manipulation ──
@@ -98,7 +122,11 @@ function renderApp() {
   const app = document.getElementById('app');
   if (!app) return;
 
-  app.innerHTML = '<div class="topbar"><div class="topbar-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>SQL Notebook</div><div id="global-status" class="global-status disconnected"><div class="status-dot"></div> Disconnected</div></div><div class="cells-container" id="cells"></div><div class="add-cell-bar"><button class="btn-add" data-action="addCell" data-type="sql">+ SQL</button><button class="btn-add" data-action="addCell" data-type="markdown">+ Markdown</button><button class="btn-add" data-action="addCell" data-type="schema">+ Schema</button><button class="btn-add" data-action="addCell" data-type="chart">+ Chart</button><button class="btn-add" data-action="addCell" data-type="summary">+ Profiler</button></div>';
+  const addButtons = INSERTABLE_TYPES.map(t =>
+    `<button class="btn-add" data-action="addCell" data-type="${t}">+ ${CELL_TYPES[t].label}</button>`
+  ).join('');
+
+  app.innerHTML = `<div class="topbar"><div class="topbar-title"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:6px"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon></svg>SQL Notebook</div><div id="global-status" class="global-status disconnected"><div class="status-dot"></div> Disconnected</div></div><div class="cells-container" id="cells"></div><div class="add-cell-bar">${addButtons}</div>`;
 
   renderCells();
   updateGlobalStatus();
@@ -114,22 +142,20 @@ function renderCells() {
     cellEl.className = 'cell';
     cellEl.dataset.index = idx.toString();
 
-    // 1. Toolbar
+    const meta = CELL_TYPES[cell.type] || { label: 'Unknown', badgeClass: '', needsConnection: false };
+    const disabledAttr = (!isConnected && meta.needsConnection) ? ' disabled' : '';
+
+    // 1. Toolbar — badge from registry
     let toolbar = '<div class="cell-toolbar">';
+    toolbar += `<div class="cell-badge ${meta.badgeClass}">${meta.label}</div>`;
     if (cell.type === 'sql') {
       const cellName = cell.name || 'table_' + idx;
-      toolbar += '<div class="cell-badge badge-sql">SQL</div><input type="text" id="cell-name-' + idx + '" class="cell-name-input" value="' + escapeHtml(cellName) + '" style="background:transparent;border:none;border-bottom:1px dotted #ccc;outline:none;font-size:12px;color:#666;padding:2px 4px;width:120px;margin-left:8px;font-family:monospace;" placeholder="table_' + idx + '" />';
+      toolbar += '<input type="text" id="cell-name-' + idx + '" class="cell-name-input" value="' + escapeHtml(cellName) + '" style="background:transparent;border:none;border-bottom:1px dotted var(--border-color);outline:none;font-size:12px;color:var(--text-muted);padding:2px 4px;width:120px;margin-left:8px;font-family:var(--font-mono);" placeholder="table_' + idx + '" />';
     }
-    else if (cell.type === 'markdown') toolbar += '<div class="cell-badge badge-md">Markdown</div>';
-    else if (cell.type === 'connection') toolbar += '<div class="cell-badge badge-conn">Connection</div>';
-    else if (cell.type === 'schema') toolbar += '<div class="cell-badge" style="background:#eef2ff;color:#4f46e5;">Schema</div>';
-    else if (cell.type === 'chart') toolbar += '<div class="cell-badge" style="background:#fce7f3;color:#db2777;">Chart</div>';
-    else if (cell.type === 'summary') toolbar += '<div class="cell-badge" style="background:#dcfce3;color:#166534;">Profiler</div>';
-    else toolbar += '<div class="cell-badge">Unknown</div>';
     
     toolbar += '<div class="cell-actions">';
     if (cell.type === 'sql') {
-      toolbar += '<button class="btn-action btn-run" data-action="runSql" data-idx="' + idx + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
+      toolbar += '<button class="btn-action btn-run" data-action="runSql" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
       toolbar += '<button class="btn-icon" data-action="toggleWiki" data-idx="' + idx + '" title="Wiki / Examples"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></button>';
     }
     if (idx > 0) toolbar += '<button class="btn-icon" data-action="moveCellUp" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>';
@@ -141,21 +167,19 @@ function renderCells() {
     let content = '<div class="cell-content">';
 
     if (cell.type === 'connection') {
-      content += '<div class="conn-form"><div class="conn-row"><select id="conn-driver-' + idx + '" class="conn-select"><option value="postgres">PostgreSQL</option><option value="duckdb">DuckDB</option></select><input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(cell.content) + '" placeholder="postgresql://user:password@localhost:5432/dbname" spellcheck="false" list="recent-conns" />';
-      content += '<datalist id="recent-conns">' + recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('') + '</datalist>';
+      content += '<div class="conn-form"><div class="conn-row"><input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(cell.content) + '" placeholder="postgresql://user:password@localhost:5432/dbname" spellcheck="false" list="recent-conns-' + idx + '" />';
+      content += '<datalist id="recent-conns-' + idx + '">' + recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('') + '</datalist>';
       if (isConnected) {
         content += '<button class="btn-primary" style="background:var(--danger)" data-action="disconnectDb">Disconnect</button>';
       } else {
-        content += '<button class="btn-primary" data-action="connectDb" data-idx="' + idx + '">Connect</button>';
+        const hasValue = !!cell.content.trim();
+        const connDisabled = !hasValue ? ' disabled style="opacity:0.4;cursor:not-allowed;"' : '';
+        content += '<button class="btn-primary" id="conn-btn-' + idx + '" data-action="connectDb" data-idx="' + idx + '"' + connDisabled + '>Connect</button>';
       }
       content += '</div><div id="conn-msg-' + idx + '" style="font-size:13px; margin-top:8px;"></div></div>';
     } 
     else if (cell.type === 'sql') {
       content += '<div class="sql-editor" id="sql-container-' + idx + '"><div style="padding:10px;color:#888;">Loading editor...</div></div>';
-      
-      if (cell._showWiki) {
-        content += renderWiki(driverType);
-      }
 
       content += '<div id="output-' + idx + '">';
       if (cell._output) {
@@ -170,7 +194,7 @@ function renderCells() {
       content += renderSchemaBlock(idx, escapeHtml);
     }
     else if (cell.type === 'chart') {
-      content += renderChartBlock(idx, cell.content, escapeHtml);
+      content += renderChartBlock(idx, cell.content, escapeHtml, columnCache);
     }
     else if (cell.type === 'summary') {
       content += renderSummaryBlock(idx, cell.content, escapeHtml);
@@ -178,13 +202,24 @@ function renderCells() {
 
     content += '</div>';
 
+    // Insert-cell divider ABOVE the cell (reuses shared helper)
+    const insertAbove = document.createElement('div');
+    insertAbove.className = 'insert-cell-divider';
+    insertAbove.innerHTML = buildInsertDivider(idx);
+    container.appendChild(insertAbove);
+
     cellEl.innerHTML = toolbar + content;
     container.appendChild(cellEl);
 
     // Attach Event Listeners
     if (cell.type === 'sql') {
+      // Dispose previous Monaco editor for this cell if exists
+      if (monacoEditors.has(idx)) {
+        try { monacoEditors.get(idx).dispose(); } catch {}
+        monacoEditors.delete(idx);
+      }
       loadMonaco(() => {
-        initMonacoEditor(
+        const editor = initMonacoEditor(
           'sql-container-' + idx,
           cell.content,
           'sql',
@@ -196,6 +231,7 @@ function renderCells() {
             (window as any).runSql(idx);
           }
         );
+        if (editor) monacoEditors.set(idx, editor);
       });
       const nameInp = document.getElementById('cell-name-' + idx) as HTMLInputElement;
       if (nameInp) {
@@ -206,15 +242,28 @@ function renderCells() {
       }
     } else if (cell.type === 'connection') {
       const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
+      const connBtn = document.getElementById('conn-btn-' + idx) as HTMLButtonElement;
       if (inp) {
         inp.addEventListener('input', () => {
           cells[idx].content = inp.value;
           save();
+          // Enable/disable connect button based on input
+          if (connBtn) {
+            if (inp.value.trim()) {
+              connBtn.disabled = false;
+              connBtn.style.opacity = '1';
+              connBtn.style.cursor = 'pointer';
+            } else {
+              connBtn.disabled = true;
+              connBtn.style.opacity = '0.4';
+              connBtn.style.cursor = 'not-allowed';
+            }
+          }
         });
         inp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
-            (window as any).connectDb(idx);
+            if (inp.value.trim()) (window as any).connectDb(idx);
           }
         });
       }
@@ -260,10 +309,34 @@ function renderCells() {
         handleSummaryAggregateResult(cell._summaryData, escapeHtml);
       }
       if (cell.type === 'sql' && cell._outputData) {
-        setupAdvancedTableListeners(idx, cell._outputData, escapeHtml);
+          setupAdvancedTableListeners(idx, cell._outputData, escapeHtml);
       }
     }, 0);
   });
+
+  // Insert-cell divider AFTER the last cell (reuses shared helper)
+  if (cells.length > 0) {
+    const insertAfterLast = document.createElement('div');
+    insertAfterLast.className = 'insert-cell-divider';
+    insertAfterLast.innerHTML = buildInsertDivider(cells.length);
+    container.appendChild(insertAfterLast);
+  }
+
+  // Initialize custom dropdowns once after all cells are rendered
+  setTimeout(() => {
+    initCustomSelects();
+    initCustomAutocompletes(recentConnections);
+
+    // Disable all run-type buttons when not connected
+    if (!isConnected) {
+      const runActions = ['chartRun', 'summaryRun', 'schemaRun'];
+      runActions.forEach(action => {
+        container.querySelectorAll(`button[data-action="${action}"]`).forEach((btn: any) => {
+          btn.disabled = true;
+        });
+      });
+    }
+  }, 10);
 }
 
 function autoResizeTextarea(el: HTMLTextAreaElement) {
@@ -277,6 +350,29 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   cells.push({ type, content: type === 'sql' ? '' : type === 'markdown' ? '# New block' : '' });
   save();
   renderCells();
+};
+
+(window as any).insertCellAt = (pos: number, type: string) => {
+  const newCell: Cell = { type, content: type === 'sql' ? '' : type === 'markdown' ? '# New block' : '' };
+  cells.splice(pos, 0, newCell);
+  save();
+  renderCells();
+};
+
+// Re-render a single table (used by pin toggle)
+(window as any).rerenderSqlTable = (idx: number) => {
+  const cell = cells[idx];
+  if (!cell || !cell._outputData) return;
+  const msg = cell._outputData;
+  let outputHtml = '<div class="output-area">';
+  outputHtml += renderAdvancedTableHtml(idx, msg, escapeHtml);
+  outputHtml += '</div>';
+  cell._output = outputHtml;
+  const outputEl = document.getElementById('output-' + idx);
+  if (outputEl) {
+    outputEl.innerHTML = outputHtml;
+    setTimeout(() => setupAdvancedTableListeners(idx, msg, escapeHtml), 0);
+  }
 };
 
 (window as any).schemaLoad = (idx: number) => {
@@ -333,7 +429,6 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).connectDb = (idx: number) => {
-  const driverSel = document.getElementById('conn-driver-' + idx) as HTMLSelectElement;
   const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
   const msgEl = document.getElementById('conn-msg-' + idx);
   if (!inp || !inp.value.trim()) return;
@@ -342,7 +437,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   vscode.postMessage({ 
     type: 'connect', 
     connectionString: inp.value.trim(),
-    driverType: driverSel.value 
+    driverType: 'auto'
   });
 };
 
@@ -419,17 +514,36 @@ window.addEventListener('message', event => {
     dbName = msg.dbName || '';
     driverType = msg.driverType || '';
     updateGlobalStatus();
-    renderCells(); // Refresh to show connect/disconnect buttons and errors
+    renderCells();
+    
+    // Show connection message
+    const connIdx = cells.findIndex((c: any) => c.type === 'connection');
+    if (connIdx >= 0) {
+       const msgEl = document.getElementById('conn-msg-' + connIdx);
+       if (msgEl) {
+           if (msg.error) {
+               msgEl.innerHTML = '<span style="color:#dc2626;">' + escapeHtml(msg.error) + '</span>';
+           } else if (msg.success) {
+               msgEl.innerHTML = '<span style="color:#10b981;">Connected to ' + escapeHtml(msg.dbName || 'db') + '</span>';
+           }
+       }
+    }
   }
 
   if (msg.type === 'recent-connections') {
     recentConnections = msg.connections || [];
-    const dl = document.getElementById('recent-conns');
-    if (dl) {
-      dl.innerHTML = recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
-    } else {
-      renderCells(); // Force render to create datalist if not there
-    }
+    // Update all per-cell datalists
+    let updated = false;
+    cells.forEach((c, i) => {
+      if (c.type === 'connection') {
+        const dl = document.getElementById('recent-conns-' + i);
+        if (dl) {
+          dl.innerHTML = recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('');
+          updated = true;
+        }
+      }
+    });
+    if (!updated) renderCells();
   }
 
   if (msg.type === 'disconnect-result') {
@@ -450,6 +564,10 @@ window.addEventListener('message', event => {
     if (msg.error) {
       outputHtml += '<div class="output-meta"><span class="meta-tag tag-err">ERROR</span> ' + ms + '</div><div class="output-error">' + escapeHtml(msg.error) + '</div>';
     } else if (msg.rows && msg.rows.length > 0) {
+      if (msg.fields) {
+        const cellName = cells[idx].name || `table_${idx}`;
+        columnCache[cellName] = msg.fields.map((f: any) => f.name);
+      }
       outputHtml += renderAdvancedTableHtml(idx, msg, escapeHtml);
     } else {
       outputHtml += '<div class="output-meta"><span class="meta-tag tag-ok">' + escapeHtml(msg.command || 'OK') + '</span> ' + (msg.rowCount || 0) + ' row' + (msg.rowCount !== 1 ? 's' : '') + ' affected • ' + ms + '</div><div style="padding:16px; color:var(--text-muted); font-style:italic; font-size:13px;">Query executed successfully. No rows returned.</div>';
@@ -515,21 +633,48 @@ document.addEventListener('click', (e) => {
   
   if (action === 'connectDb') (window as any).connectDb(idx);
   else if (action === 'disconnectDb') (window as any).disconnectDb();
-  else if (action === 'runSql') (window as any).runSql(idx);
+  else if (action === 'runSql') { if (!isConnected) return; (window as any).runSql(idx); }
   else if (action === 'cancelSql') (window as any).cancelSql();
   else if (action === 'addCell' && typeStr) (window as any).addCell(typeStr);
+  else if (action === 'insertCell') {
+    const pos = parseInt(btn.getAttribute('data-pos') || '0', 10);
+    (window as any).insertCellAt(pos, typeStr || 'sql');
+  }
   else if (action === 'deleteCell') (window as any).deleteCell(idx);
   else if (action === 'moveCellUp') (window as any).moveCell(idx, -1);
   else if (action === 'moveCellDown') (window as any).moveCell(idx, 1);
-  else if (action === 'summaryRun') (window as any).summaryRun(idx);
-  else if (action === 'chartRun') (window as any).chartRun(idx);
-  else if (action === 'schemaRun') (window as any).schemaLoad(idx);
+  else if (action === 'summaryRun') { if (!isConnected) return; (window as any).summaryRun(idx); }
+  else if (action === 'chartRun') { if (!isConnected) return; (window as any).chartRun(idx); }
+  else if (action === 'schemaRun') { if (!isConnected) return; (window as any).schemaLoad(idx); }
   else if (action === 'toggleWiki') {
-    if (cells[idx]) {
-      cells[idx]._showWiki = !cells[idx]._showWiki;
-      renderCells();
+    let popup = document.getElementById('global-wiki-popup');
+    if (!popup) {
+      popup = document.createElement('div');
+      popup.id = 'global-wiki-popup';
+      popup.className = 'sqlnb-wiki-popup';
+      document.body.appendChild(popup);
+    }
+    const isVisible = popup.style.display !== 'none';
+    if (!isVisible) {
+      popup.innerHTML = renderWiki(driverType);
+      const rect = btn.getBoundingClientRect();
+      popup.style.display = 'block';
+      popup.style.top = (rect.bottom + 8) + 'px';
+      popup.style.right = (window.innerWidth - rect.right) + 'px';
+    } else {
+      popup.style.display = 'none';
     }
   }
+});
+
+document.addEventListener('click', (e) => {
+   const target = e.target as HTMLElement;
+   const isWikiBtn = target.closest('button[data-action="toggleWiki"]');
+   const isInsideWiki = target.closest('#global-wiki-popup');
+   if (!isWikiBtn && !isInsideWiki) {
+      const popup = document.getElementById('global-wiki-popup');
+      if (popup) popup.style.display = 'none';
+   }
 });
 // Kick off first render
 renderApp();

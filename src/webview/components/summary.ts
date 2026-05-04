@@ -7,11 +7,25 @@ export function renderSummaryBlock(idx: number, content: string, escapeHtml: (s:
     try { state = JSON.parse(content || '{}'); } catch {}
     const ds = escapeHtml(state.ds || `table_${idx > 0 ? idx - 1 : 0}`);
 
-    return '<div class="summary-root" id="summary-root-' + idx + '" style="font-family:system-ui;"><div style="display:flex; align-items:center; gap:16px; padding:12px 16px; background:#f9f9f9; border:1px solid #ddd; border-bottom:none; border-radius:6px 6px 0 0;"><label style="font-weight:600; font-size:13px; color:#333;">Source Table Name: <input type="text" id="summary-ds-' + idx + '" value="' + ds + '" style="margin-left:8px; padding:4px; border:1px solid #ccc; border-radius:4px; width:120px;" /></label><button class="btn-primary" data-action="summaryRun" data-idx="' + idx + '"><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run Data Profile</button><div id="summary-status-' + idx + '" style="font-size:12px; color:#666;"></div></div><div id="summary-content-' + idx + '" style="border:1px solid #ddd; border-radius:0 0 6px 6px; padding:16px; background:#fff; overflow-x:auto;"><div style="color:#888; font-size:13px;">Click "Run Data Profile" to compute statistics.</div></div></div>';
+    return `<div class="summary-root" id="summary-root-${idx}">
+        <div class="block-toolbar">
+            <label class="block-label" style="margin-bottom:0;display:flex;align-items:center;gap:8px;">
+                Source Table
+                <input type="text" id="summary-ds-${idx}" value="${ds}" class="sqlnb-input" style="width:160px;" />
+            </label>
+            <button class="btn-primary" data-action="summaryRun" data-idx="${idx}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run Profile
+            </button>
+            <span class="block-status" id="summary-status-${idx}"></span>
+        </div>
+        <div class="block-body" id="summary-content-${idx}">
+            <div class="block-body-empty">Click "Run Profile" to compute statistics.</div>
+        </div>
+    </div>`;
 }
 
 export function handleSummaryAggregateResult(msg: any, escapeHtml: (s: any) => string) {
-    const idx = msg.cellIndex;
+    const idx = msg.summaryIndex ?? msg.cellIndex;
     const status = document.getElementById('summary-status-' + idx);
     const content = document.getElementById('summary-content-' + idx);
     

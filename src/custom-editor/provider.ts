@@ -11,36 +11,62 @@ interface CellData {
   content: string;
 }
 
+/** Per-document state — each notebook gets its own connection, results, etc. */
+interface DocumentSession {
+  driver: IDatabaseDriver | null;
+  currentDbName: string;
+  driverType: string;
+  resultStore: Map<string, { query: string; rows: any[]; columns: string[] }>;
+  lastResult: Record<string, any>[];
+  isExecuting: boolean;
+}
+
 export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvider {
   public static readonly viewType = 'sqlnb.editor';
-  private driver: IDatabaseDriver | null = null;
-  private currentDbName: string = '';
-  private driverType: string = '';
-  private resultStore = new Map<number, { query: string; rows: any[]; columns: string[] }>();
-  private lastResult: Record<string, any>[] = [];
+
+  /** Isolated sessions — keyed by document URI string. */
+  private sessions = new Map<string, DocumentSession>();
 
   constructor(private readonly context: vscode.ExtensionContext) {}
 
-  public static register(context: vscode.ExtensionContext): vscode.Disposable {
-    const provider = new SqlNotebookEditorProvider(context);
-    return vscode.window.registerCustomEditorProvider(
-      SqlNotebookEditorProvider.viewType,
-      provider,
-      {
-        webviewOptions: { retainContextWhenHidden: true },
-        supportsMultipleEditorsPerDocument: false,
-      }
-    );
+  /** Create or retrieve the session for a given document. */
+  private getSession(uri: string): DocumentSession {
+    let s = this.sessions.get(uri);
+    if (!s) {
+      s = {
+        driver: null,
+        currentDbName: '',
+        driverType: '',
+        resultStore: new Map(),
+        lastResult: [],
+        isExecuting: false,
+      };
+      this.sessions.set(uri, s);
+    }
+    return s;
   }
 
-  /** Disconnect the active driver (used by extension commands). */
+  /** Disconnect the active driver for the most-recently-active document. */
   public async disconnectActive(): Promise<void> {
-    await this.disconnect();
+    // Disconnect all sessions (command-palette action has no document context)
+    for (const [, s] of this.sessions) {
+      if (s.driver) {
+        try { await s.driver.disconnect(); } catch {}
+        s.driver = null;
+        s.currentDbName = '';
+      }
+      s.resultStore.clear();
+      s.lastResult = [];
+    }
   }
 
   /** Return the last SQL result set (used by Export CSV command). */
   public getLastResult(): Record<string, any>[] {
-    return this.lastResult;
+    // Return the last result from the first session that has one (best-effort)
+    for (const [, s] of this.sessions) {
+      if (s.lastResult.length > 0) return s.lastResult;
+    }
+    return [];
   }
 
   public async resolveCustomTextEditor(
@@ -48,6 +74,9 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
     webviewPanel: vscode.WebviewPanel,
     _token: vscode.CancellationToken
   ): Promise<void> {
+    const docKey = document.uri.toString();
+    const session = this.getSession(docKey);
+
     webviewPanel.webview.options = { 
       enableScripts: true,
       localResourceRoots: [vscode.Uri.joinPath(this.context.extensionUri, 'out')]
@@ -77,7 +106,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
 
     webviewPanel.onDidDispose(() => {
       changeDocSub.dispose();
-      this.disconnect();
+      this.disposeSession(docKey);
     });
 
     // Messages from webview
@@ -91,7 +120,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           break;
         }
         case 'connect': {
-          const result = await this.connectToDb(msg.connectionString, msg.driverType);
+          const result = await this.connectToDb(session, msg.connectionString, msg.driverType);
           if (result.success && msg.connectionString) {
             const recent = this.context.globalState.get<string[]>('sqlnb-recent-connections', []);
             if (!recent.includes(msg.connectionString)) {
@@ -105,50 +134,53 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           break;
         }
         case 'disconnect': {
-          await this.disconnect();
+          await this.disconnectSession(session);
           webviewPanel.webview.postMessage({ type: 'disconnect-result', success: true });
           break;
         }
         case 'cancel-query': {
-          await this.cancelQuery();
+          await this.cancelQuery(session);
           break;
         }
         case 'execute-sql': {
-          const result = await this.executeQuery(msg.query);
+          const result = await this.executeQuery(session, msg.query);
           if (result.rows && result.fields) {
-            this.resultStore.set(msg.cellName, { 
+            session.resultStore.set(msg.cellName, { 
               query: msg.query, 
               rows: result.rows, 
               columns: result.fields.map(f => f.name) 
             });
-            this.lastResult = result.rows;
+            session.lastResult = result.rows;
           }
-          webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result });
+          webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result, command: msg.query });
           break;
         }
         case 'execute-sort': {
-          if (!this.driver || !this.driver.isConnected()) {
+          if (!session.driver || !session.driver.isConnected()) {
             break;
           }
           if (msg.direction === 'RESET') {
-             const result = await this.executeQuery(msg.query);
-             webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result });
+             const result = await this.executeQuery(session, msg.query);
+             webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result, command: msg.query });
              break;
           }
-          const sortQuery = `SELECT * FROM (\n${msg.query}\n) AS _sqlnb_sort ORDER BY "${msg.column}" ${msg.direction}`;
-          const result = await this.executeQuery(sortQuery);
+          const cleanQuery = msg.query.trim().replace(/;+$/, '');
+          const safeCol = msg.column.replace(/"/g, '""');
+          const sortQuery = `SELECT * FROM (\n${cleanQuery}\n) AS _sqlnb_sort ORDER BY "${safeCol}" ${msg.direction}`;
+          const result = await this.executeQuery(session, sortQuery);
           webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result, command: msg.query, currentSort: { column: msg.column, direction: msg.direction } });
           break;
         }
         case 'profile-column': {
-          if (!this.driver || !this.driver.isConnected()) {
+          if (!session.driver || !session.driver.isConnected()) {
             break;
           }
           const col = msg.column;
-          const q = buildSummaryQuery(msg.query, { [col]: msg.columnType }, this.driverType as 'postgres'|'duckdb');
+          const cleanQuery = msg.query.trim().replace(/;+$/, '');
+          const q = buildSummaryQuery(cleanQuery, { [col]: msg.columnType }, session.driverType as 'postgres'|'duckdb');
           const start = performance.now();
           try {
-             const res = await this.driver!.executeRaw(q);
+             const res = await session.driver!.executeRaw(q);
              webviewPanel.webview.postMessage({ type: 'profile-column-result', cellIndex: msg.cellIndex, column: col, columnType: msg.columnType, rows: res.rows || [], elapsedMs: performance.now() - start });
           } catch(err: any) {
              webviewPanel.webview.postMessage({ type: 'profile-column-result', cellIndex: msg.cellIndex, column: col, error: err.message });
@@ -156,14 +188,14 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           break;
         }
         case 'schema-load': {
-          if (!this.driver || !this.driver.isConnected()) {
+          if (!session.driver || !session.driver.isConnected()) {
             webviewPanel.webview.postMessage({ type: 'schema-load-result', cellIndex: msg.cellIndex, error: 'Not connected' });
             break;
           }
-          const query = buildSchemaQuery(this.driverType as 'postgres'|'duckdb');
+          const query = buildSchemaQuery(session.driverType as 'postgres'|'duckdb');
           const start = performance.now();
           try {
-            const result = await this.driver.executeRaw(query);
+            const result = await session.driver.executeRaw(query);
             const tables = parseSchemaRows(result.rows || []);
             webviewPanel.webview.postMessage({ type: 'schema-load-result', cellIndex: msg.cellIndex, tables, elapsedMs: performance.now() - start });
           } catch (err: any) {
@@ -172,15 +204,16 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           break;
         }
         case 'chart-aggregate': {
-          const stored = this.resultStore.get(msg.datasetKey);
+          const stored = session.resultStore.get(msg.datasetKey);
           if (!stored) {
             webviewPanel.webview.postMessage({ type: 'chart-aggregate-result', requestId: msg.requestId, chartIndex: msg.chartIndex, error: `No data for table '${msg.datasetKey}'. Run SQL cell first.` });
             break;
           }
-          const q = buildAggregationQuery(stored.query, msg.xCol, msg.yCol, msg.aggFn, msg.colorCol, this.driverType as 'postgres'|'duckdb', msg.extraYCols);
+          const cleanQuery = stored.query.trim().replace(/;+$/, '');
+          const q = buildAggregationQuery(cleanQuery, msg.xCol, msg.yCol, msg.aggFn, msg.colorCol, session.driverType as 'postgres'|'duckdb', msg.extraYCols);
           const start = performance.now();
           try {
-            const res = await this.driver!.executeRaw(q);
+            const res = await session.driver!.executeRaw(q);
             webviewPanel.webview.postMessage({ type: 'chart-aggregate-result', requestId: msg.requestId, chartIndex: msg.chartIndex, rows: res.rows || [], elapsedMs: performance.now() - start });
           } catch (err: any) {
             webviewPanel.webview.postMessage({ type: 'chart-aggregate-result', requestId: msg.requestId, chartIndex: msg.chartIndex, error: err.message, elapsedMs: performance.now() - start });
@@ -188,7 +221,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           break;
         }
         case 'summary-aggregate': {
-          const stored = this.resultStore.get(msg.datasetKey);
+          const stored = session.resultStore.get(msg.datasetKey);
           if (!stored) {
             webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, error: `No data for table '${msg.datasetKey}'. Run SQL cell first.` });
             break;
@@ -209,10 +242,11 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             columnTypes[col] = isNumeric ? 'numeric' : isDate ? 'date' : 'string';
           }
           
-          const q = buildSummaryQuery(stored.query, columnTypes, this.driverType as 'postgres'|'duckdb');
+          const cleanQuery = stored.query.trim().replace(/;+$/, '');
+          const q = buildSummaryQuery(cleanQuery, columnTypes, session.driverType as 'postgres'|'duckdb');
           const start = performance.now();
           try {
-            const res = await this.driver!.executeRaw(q);
+            const res = await session.driver!.executeRaw(q);
             webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, rows: res.rows || [], columnTypes, elapsedMs: performance.now() - start });
           } catch (err: any) {
             webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, error: err.message, elapsedMs: performance.now() - start });
@@ -223,46 +257,64 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
     });
   }
 
-  // ── Database operations ──
+  // ── Database operations (all session-scoped) ──
 
-  private async connectToDb(connStr: string, driverType: string = 'postgres'): Promise<{ success: boolean; error?: string; dbName?: string; driverType?: string }> {
+  private async connectToDb(session: DocumentSession, connStr: string, driverType: string = 'auto'): Promise<{ success: boolean; error?: string; dbName?: string; driverType?: string }> {
     try {
-      await this.disconnect();
+      await this.disconnectSession(session);
       
-      if (driverType === 'duckdb') {
-        this.driverType = 'duckdb';
-        this.driver = new DuckDbDriver();
-        if (this.driver) await this.driver.connect(connStr);
-        this.currentDbName = connStr || 'In-Memory DuckDB';
+      let actualDriver = driverType;
+      if (actualDriver === 'auto' || !actualDriver) {
+         if (connStr.startsWith('postgres://') || connStr.startsWith('postgresql://')) {
+            actualDriver = 'postgres';
+         } else {
+            actualDriver = 'duckdb';
+         }
+      }
+      
+      if (actualDriver === 'duckdb') {
+        session.driverType = 'duckdb';
+        session.driver = new DuckDbDriver();
+        if (session.driver) await session.driver.connect(connStr);
+        session.currentDbName = connStr || 'In-Memory DuckDB';
       } else {
-        this.driverType = 'postgres';
-        this.driver = new PostgresDriver();
-        if (this.driver) await this.driver.connect(connStr);
+        session.driverType = 'postgres';
+        session.driver = new PostgresDriver();
+        if (session.driver) await session.driver.connect(connStr);
         try {
-          this.currentDbName = new URL(connStr).pathname.slice(1) || 'postgres';
+          session.currentDbName = new URL(connStr).pathname.slice(1) || 'postgres';
         } catch {
-          this.currentDbName = 'postgres';
+          session.currentDbName = 'postgres';
         }
       }
       
-      return { success: true, dbName: this.currentDbName, driverType: this.driverType };
+      return { success: true, dbName: session.currentDbName, driverType: session.driverType };
     } catch (err: any) {
-      this.driver = null;
+      session.driver = null;
       return { success: false, error: err.message };
     }
   }
 
-  private async disconnect() {
-    if (this.driver) {
-      try { await this.driver.disconnect(); } catch {}
-      this.driver = null;
-      this.currentDbName = '';
+  private async disconnectSession(session: DocumentSession) {
+    if (session.driver) {
+      try { await session.driver.disconnect(); } catch {}
+      session.driver = null;
+      session.currentDbName = '';
+    }
+    session.resultStore.clear();
+    session.lastResult = [];
+  }
+
+  /** Clean up and remove a session entirely (on webview dispose). */
+  private async disposeSession(docKey: string) {
+    const session = this.sessions.get(docKey);
+    if (session) {
+      await this.disconnectSession(session);
+      this.sessions.delete(docKey);
     }
   }
 
-  private _isExecuting = false;
-
-  private async executeQuery(query: string): Promise<{
+  private async executeQuery(session: DocumentSession, query: string): Promise<{
     rows?: Record<string, any>[];
     fields?: { name: string; dataTypeID?: number }[];
     rowCount?: number;
@@ -272,7 +324,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
     hasMore?: boolean;
     maxRows?: number;
   }> {
-    if (!this.driver || !this.driver.isConnected()) {
+    if (!session.driver || !session.driver.isConnected()) {
       return { error: 'Not connected to a database. Use the connection block to connect first.' };
     }
     const start = performance.now();
@@ -287,10 +339,10 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
       
       let result;
       try {
-        this._isExecuting = true;
+        session.isExecuting = true;
         result = isSelect 
-          ? await this.driver.executeSelect(query, maxRows)
-          : await this.driver.executeStatement(query);
+          ? await session.driver.executeSelect(query, maxRows)
+          : await session.driver.executeStatement(query);
       } catch (err: any) {
         const msg = err.message || '';
         if (msg.includes('canceling statement due to user request') || msg.includes('INTERRUPT')) {
@@ -298,7 +350,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
         }
         throw err;
       } finally {
-        this._isExecuting = false;
+        session.isExecuting = false;
       }
         
       const elapsed = performance.now() - start;
@@ -317,10 +369,10 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
     }
   }
 
-  private async cancelQuery(): Promise<void> {
-    if (!this.driver || !this._isExecuting) return;
+  private async cancelQuery(session: DocumentSession): Promise<void> {
+    if (!session.driver || !session.isExecuting) return;
     try {
-      await this.driver.cancelQuery();
+      await session.driver.cancelQuery();
     } catch (err) {
       console.error('Failed to cancel query', err);
     }

@@ -1,12 +1,9 @@
 declare const window: any;
 declare const document: any;
 
-function esc(s: any): string {
-    if (typeof s !== 'string') return String(s);
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
-export function renderChartBlock(idx: number, content: string, escapeHtml: (s: any) => string): string {
+
+export function renderChartBlock(idx: number, content: string, escapeHtml: (s: any) => string, columnCache: Record<string, string[]> = {}): string {
     let state: any = {};
     try { state = JSON.parse(content || '{}'); } catch {}
 
@@ -17,37 +14,53 @@ export function renderChartBlock(idx: number, content: string, escapeHtml: (s: a
     const color = escapeHtml(state.color || '');
     const agg = state.agg || 'sum';
 
-    const ss = 'border:1px solid #ccc;border-radius:4px;padding:4px 6px;font-size:12px;outline:none;width:100%;background:#fff;margin-bottom:8px;';
-    const ls = 'display:block;font-size:11px;font-weight:bold;color:#555;';
+    const cols = columnCache[ds] || [];
+    const getOptions = (selected: string, includeEmpty: boolean = false) => {
+        let opts = includeEmpty ? `<option value="">(None)</option>` : '';
+        if (cols.length === 0 && selected) opts += `<option value="${selected}" selected>${selected}</option>`;
+        opts += cols.map(c => `<option value="${escapeHtml(c)}" ${c === selected ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+        return opts;
+    };
 
     return `
-    <div class="chart-root" id="chart-root-${idx}" style="display:flex;gap:16px;font-family:system-ui;">
-        <div style="flex:0 0 220px;background:#f9f9f9;padding:16px;border:1px solid #ddd;border-radius:6px;">
-            <h4 style="margin:0 0 12px 0;color:#333;font-size:14px;">Chart Settings</h4>
+    <div class="chart-root" id="chart-root-${idx}" style="display:flex;gap:0;">
+        <div style="flex:0 0 240px;background:var(--bg-surface-hover);padding:16px;border-right:1px solid var(--border-color);">
+            <h4 style="margin:0 0 16px 0;font-size:14px;font-weight:600;color:var(--text-main);">Chart Settings</h4>
             
-            <label style="${ls}">Source Table Name</label>
-            <input type="text" id="chart-ds-${idx}" value="${ds}" style="${ss}" />
+            <div class="block-field">
+                <label class="block-label">Source Table</label>
+                <input type="text" id="chart-ds-${idx}" value="${ds}" class="sqlnb-input" />
+            </div>
             
-            <label style="${ls}">Chart Type</label>
-            <select id="chart-type-${idx}" style="${ss}" onchange="window.chartRerender(${idx})">
-                <option value="bar" ${type === 'bar' ? 'selected' : ''}>Bar</option>
-                <option value="hbar" ${type === 'hbar' ? 'selected' : ''}>Horizontal Bar</option>
-                <option value="line" ${type === 'line' ? 'selected' : ''}>Line</option>
-                <option value="scatter" ${type === 'scatter' ? 'selected' : ''}>Scatter</option>
-                <option value="pie" ${type === 'pie' ? 'selected' : ''}>Pie</option>
-            </select>
+            <div class="block-field">
+                <label class="block-label">Chart Type</label>
+                <select id="chart-type-${idx}" class="sqlnb-select" onchange="window.chartRerender(${idx})">
+                    <option value="bar" ${type === 'bar' ? 'selected' : ''}>Bar</option>
+                    <option value="hbar" ${type === 'hbar' ? 'selected' : ''}>Horizontal Bar</option>
+                    <option value="line" ${type === 'line' ? 'selected' : ''}>Line</option>
+                    <option value="scatter" ${type === 'scatter' ? 'selected' : ''}>Scatter</option>
+                    <option value="pie" ${type === 'pie' ? 'selected' : ''}>Pie</option>
+                </select>
+            </div>
 
-            <label style="${ls}">X Axis (e.g. date)</label>
-            <input type="text" id="chart-x-${idx}" placeholder="date" value="${x}" style="${ss}" />
+            <div class="block-field">
+                <label class="block-label">X Axis</label>
+                <select id="chart-x-${idx}" class="sqlnb-select">${getOptions(x)}</select>
+            </div>
 
-            <label style="${ls}">Y Axis (e.g. amount)</label>
-            <input type="text" id="chart-y-${idx}" placeholder="amount" value="${y}" style="${ss}" />
+            <div class="block-field">
+                <label class="block-label">Y Axis</label>
+                <select id="chart-y-${idx}" class="sqlnb-select">${getOptions(y)}</select>
+            </div>
 
-            <label style="${ls}">Color / Group</label>
-            <input type="text" id="chart-color-${idx}" placeholder="category (optional)" value="${color}" style="${ss}" />
+            <div class="block-field">
+                <label class="block-label">Color / Group</label>
+                <select id="chart-color-${idx}" class="sqlnb-select">${getOptions(color, true)}</select>
+            </div>
 
-            <label style="${ls}">Aggregation</label>
-            <select id="chart-agg-${idx}" style="${ss}">
+            <div class="block-field">
+                <label class="block-label">Aggregation</label>
+                <select id="chart-agg-${idx}" class="sqlnb-select">
                 <option value="none" ${agg === 'none' ? 'selected' : ''}>None</option>
                 <option value="sum" ${agg === 'sum' ? 'selected' : ''}>Sum</option>
                 <option value="count" ${agg === 'count' ? 'selected' : ''}>Count</option>
@@ -55,11 +68,12 @@ export function renderChartBlock(idx: number, content: string, escapeHtml: (s: a
                 <option value="min" ${agg === 'min' ? 'selected' : ''}>Min</option>
                 <option value="max" ${agg === 'max' ? 'selected' : ''}>Max</option>
             </select>
+            </div>
 
             <button class="btn-primary" data-action="chartRun" data-idx="${idx}" style="width:100%;margin-top:4px;">Render Chart</button>
-            <div id="chart-status-${idx}" style="font-size:11px;color:#888;margin-top:8px;"></div>
+            <div class="block-status" id="chart-status-${idx}" style="margin-top:8px;"></div>
         </div>
-        <div style="flex:1;min-height:400px;border:1px solid #ddd;border-radius:6px;position:relative;background:#fff;">
+        <div style="flex:1;min-height:400px;border:1px solid var(--border-color);border-radius:0 6px 6px 0;position:relative;background:var(--bg-surface);">
             <div id="chart-canvas-${idx}" style="position:absolute;top:12px;left:12px;right:12px;bottom:12px;"></div>
         </div>
     </div>`;
@@ -94,7 +108,15 @@ function buildChart(idx: number, rows: any[], chartDom: HTMLElement) {
     if (!myChart) {
         myChart = window.echarts.init(chartDom);
         window._echartsInstance[idx] = myChart;
-        window.addEventListener('resize', () => myChart.resize());
+        // Use a single global resize handler instead of per-chart
+        if (!window._echartsResizeHandler) {
+            window._echartsResizeHandler = () => {
+                for (const key of Object.keys(window._echartsInstance)) {
+                    try { window._echartsInstance[key].resize(); } catch {}
+                }
+            };
+            window.addEventListener('resize', window._echartsResizeHandler);
+        }
     }
 
     const xCol = (document.getElementById('chart-x-' + idx) as HTMLInputElement)?.value || '';
@@ -141,9 +163,9 @@ function buildChart(idx: number, rows: any[], chartDom: HTMLElement) {
 
     const valFormatter = (value: any) => {
         if (typeof value !== 'number') return value;
-        if (Math.abs(value) >= 1e9) return (value / 1e9).toFixed(1).replace(/\\.0$/, '') + 'B';
-        if (Math.abs(value) >= 1e6) return (value / 1e6).toFixed(1).replace(/\\.0$/, '') + 'M';
-        if (Math.abs(value) >= 1e3) return (value / 1e3).toFixed(1).replace(/\\.0$/, '') + 'K';
+        if (Math.abs(value) >= 1e9) return (value / 1e9).toFixed(1).replace(/\.0$/, '') + 'B';
+        if (Math.abs(value) >= 1e6) return (value / 1e6).toFixed(1).replace(/\.0$/, '') + 'M';
+        if (Math.abs(value) >= 1e3) return (value / 1e3).toFixed(1).replace(/\.0$/, '') + 'K';
         return value;
     };
 

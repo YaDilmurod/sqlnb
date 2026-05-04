@@ -55,6 +55,10 @@ export function buildChartPayload(
  * This runs the aggregation server-side so we get accurate results even for
  * datasets with millions of rows.
  */
+function safeQuote(col: string): string {
+  return `"${col.replace(/"/g, '""')}"`;
+}
+
 export function buildAggregationQuery(
   originalQuery: string,
   xCol: string,
@@ -74,28 +78,29 @@ export function buildAggregationQuery(
     groupCols.push(colorCol);
   }
 
-  const quotedGroupCols = groupCols.map(c => `"${c}"`);
+  const quotedGroupCols = groupCols.map(c => safeQuote(c));
   const groupByClause = quotedGroupCols.join(', ');
 
   if (aggFn === 'none' || !aggFn) {
     const selectCols = [xCol, ...allYCols];
     if (colorCol) selectCols.push(colorCol);
     const uniqueCols = [...new Set(selectCols)];
-    const quotedCols = uniqueCols.map(c => `"${c}"`).join(', ');
+    const quotedCols = uniqueCols.map(c => safeQuote(c)).join(', ');
     return `SELECT ${quotedCols} FROM (\n${cleanOriginal}\n) AS _sqlnb_chart LIMIT 5000`;
   }
 
   const yExpressions = allYCols.map((col, idx) => {
+    const safeCol = col.replace(/"/g, '""');
     const alias = idx === 0 ? '_sqlnb_agg_value' : `_sqlnb_agg_value_${idx}`;
-    const yCastPg = `CASE WHEN "${col}"::text ~ '^[-+]?[0-9]*\\.?([0-9]+)?([eE][-+]?[0-9]+)?$' AND "${col}"::text != '' AND "${col}"::text != '.' THEN "${col}"::numeric ELSE NULL END`;
-    const yCast = driverType === 'duckdb' ? `TRY_CAST("${col}" AS numeric)` : yCastPg;
+    const yCastPg = `CASE WHEN "${safeCol}"::text ~ '^[-+]?[0-9]*\\.?([0-9]+)?([eE][-+]?[0-9]+)?$' AND "${safeCol}"::text != '' AND "${safeCol}"::text != '.' THEN "${safeCol}"::numeric ELSE NULL END`;
+    const yCast = driverType === 'duckdb' ? `TRY_CAST("${safeCol}" AS numeric)` : yCastPg;
 
     switch (aggFn) {
       case 'count': return `COUNT(*) AS "${alias}"`;
       case 'sum': return `COALESCE(SUM(${yCast}), 0) AS "${alias}"`;
       case 'avg': return `COALESCE(AVG(${yCast}), 0) AS "${alias}"`;
-      case 'min': return `MIN("${col}") AS "${alias}"`;
-      case 'max': return `MAX("${col}") AS "${alias}"`;
+      case 'min': return `MIN(${safeQuote(col)}) AS "${alias}"`;
+      case 'max': return `MAX(${safeQuote(col)}) AS "${alias}"`;
       default: return `COALESCE(SUM(${yCast}), 0) AS "${alias}"`;
     }
   });
