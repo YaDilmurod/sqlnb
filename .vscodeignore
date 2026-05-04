@@ -2,7 +2,13 @@
 .vscode-test/**
 .github/**
 src/**
+node_modules/**
 .gitignore
 tsconfig.json
 RULES.md
+organize.js
+build-webviews.js
+table_backup.ts
 **/*.map
+**/*.ts
+!out/**

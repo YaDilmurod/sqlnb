@@ -1,6 +1,6 @@
 {
     "name": "sqlnb-visualizer",
-    "displayName": "SQL Notebook",
+    "displayName": "SQLNB - SQL Notebook",
     "description": "A lightweight Jupyter-style SQL notebook for PostgreSQL — built for data analysts",
     "icon": "images/icon.png",
     "version": "0.1.3",
