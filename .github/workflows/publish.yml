@@ -39,6 +39,3 @@ jobs:
 
       - name: Publish to Open VSX
         run: npx ovsx publish --target ${{ matrix.target }} -p ${{ secrets.OVSX_PAT }}
-
-      - name: Publish to VS Code Marketplace
-        run: npx @vscode/vsce publish --target ${{ matrix.target }} -p ${{ secrets.VSCE_PAT }}
