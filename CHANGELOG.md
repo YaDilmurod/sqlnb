@@ -2,6 +2,11 @@
 
 All notable changes to the "SQL Notebook" extension will be documented in this file.
 
+## [0.1.8]
+- **Bug Fix**: Fixed duplicate Connect/Disconnect button appearing in the connection cell. The button is now updated in-place instead of being removed and re-appended on every connection state change.
+- **UX**: Improved dropdown styling across the notebook — menus now feature a smooth fade-in animation, refined box-shadow, rounded inner items, and primary-colored hover states. Connection string dropdowns render in monospace for better readability.
+- **Feature**: Chart and Profiler "Source Table" fields are now dropdown selects populated from available SQL result sets, replacing the previous free-text inputs. Changing the source table in the Chart block automatically updates the X, Y, and Color axis dropdowns with the columns from the selected table.
+
 ## [0.1.3]
 - **Feature**: Chart input fields are now stylized dropdowns! Instead of typing column names manually, the notebook intelligently populates the dropdown options based on the available columns from the executed queries.
 - **UX**: Unified the design of dropdowns and inputs across all blocks (Connection, Chart, and Profiler) to match a consistent, clean notebook aesthetic.

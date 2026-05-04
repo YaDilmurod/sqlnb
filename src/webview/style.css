@@ -346,12 +346,22 @@ body {
   align-items: center;
   justify-content: space-between;
   cursor: pointer;
+  min-height: 32px;
+}
+
+.custom-select-value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
 }
 
 .custom-select-arrow {
   color: var(--text-muted);
   display: flex;
   align-items: center;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
 }
 
 .custom-autocomplete-container {
@@ -361,34 +371,57 @@ body {
   flex: 1;
 }
 
+.custom-autocomplete-container .conn-input {
+  padding-right: 32px;
+}
+
+@keyframes dropdownFadeIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
 .custom-select-menu {
   position: absolute;
   z-index: 10000;
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-sm);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
-  max-height: 250px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.12), 0 2px 8px rgba(0, 0, 0, 0.08);
+  max-height: 260px;
   overflow-y: auto;
   font-family: var(--font-sans);
   font-size: 13px;
+  padding: 4px;
+  animation: dropdownFadeIn 0.15s ease;
 }
 
 .custom-select-item {
   padding: 8px 12px;
   cursor: pointer;
   color: var(--text-main);
-  transition: background 0.1s;
+  border-radius: 4px;
+  transition: background 0.12s ease, color 0.12s ease;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .custom-select-item:hover {
-  background: var(--bg-surface-hover);
+  background: var(--primary-light);
+  color: var(--primary);
 }
 
 .custom-select-item.selected {
   background: var(--primary-light);
   color: var(--primary);
   font-weight: 600;
+}
+
+/* Connection string items use monospace */
+.conn-autocomplete-menu .custom-select-item {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: -0.3px;
 }
 
 /* Table Outputs */

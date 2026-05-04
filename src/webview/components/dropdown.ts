@@ -109,7 +109,7 @@ export function initCustomAutocompletes(recentConnections: string[]) {
             document.querySelectorAll('.custom-select-menu').forEach(m => m.remove());
 
             menu = document.createElement('div');
-            menu.className = 'custom-select-menu';
+            menu.className = 'custom-select-menu conn-autocomplete-menu';
             
             const filtered = recentConnections;
 

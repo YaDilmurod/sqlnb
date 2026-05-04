@@ -122,28 +122,36 @@ function updateConnectionCellUI() {
     if (cell.type !== 'connection') return;
     const connRow = document.getElementById('conn-input-' + idx)?.parentElement;
     if (!connRow) return;
-    const existingBtn = connRow.querySelector('button[data-action="connectDb"], button[data-action="disconnectDb"]');
-    if (existingBtn) existingBtn.remove();
-    const newBtn = document.createElement('button');
-    newBtn.className = 'btn-primary';
+    // Find the existing button — don't create a new one (avoids duplicates)
+    const existingBtn = connRow.querySelector('button[data-action="connectDb"], button[data-action="disconnectDb"]') as HTMLButtonElement;
+    if (!existingBtn) return;
     if (isConnected) {
-      newBtn.style.background = 'var(--danger)';
-      newBtn.setAttribute('data-action', 'disconnectDb');
-      newBtn.textContent = 'Disconnect';
+      existingBtn.style.background = 'var(--danger)';
+      existingBtn.setAttribute('data-action', 'disconnectDb');
+      existingBtn.removeAttribute('data-idx');
+      existingBtn.textContent = 'Disconnect';
+      existingBtn.disabled = false;
+      existingBtn.style.opacity = '1';
+      existingBtn.style.cursor = 'pointer';
+      existingBtn.id = '';
     } else {
       const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
       const hasValue = inp && !!inp.value.trim();
-      newBtn.id = 'conn-btn-' + idx;
-      newBtn.setAttribute('data-action', 'connectDb');
-      newBtn.setAttribute('data-idx', idx.toString());
-      newBtn.textContent = 'Connect';
+      existingBtn.style.background = '';
+      existingBtn.id = 'conn-btn-' + idx;
+      existingBtn.setAttribute('data-action', 'connectDb');
+      existingBtn.setAttribute('data-idx', idx.toString());
+      existingBtn.textContent = 'Connect';
       if (!hasValue) {
-        newBtn.disabled = true;
-        newBtn.style.opacity = '0.4';
-        newBtn.style.cursor = 'not-allowed';
+        existingBtn.disabled = true;
+        existingBtn.style.opacity = '0.4';
+        existingBtn.style.cursor = 'not-allowed';
+      } else {
+        existingBtn.disabled = false;
+        existingBtn.style.opacity = '1';
+        existingBtn.style.cursor = 'pointer';
       }
     }
-    connRow.appendChild(newBtn);
   });
 }
 
@@ -227,7 +235,7 @@ function renderCells() {
       content += renderChartBlock(idx, cell.content, escapeHtml, columnCache);
     }
     else if (cell.type === 'summary') {
-      content += renderSummaryBlock(idx, cell.content, escapeHtml);
+      content += renderSummaryBlock(idx, cell.content, escapeHtml, columnCache);
     }
 
     content += '</div>';
@@ -298,22 +306,57 @@ function renderCells() {
         });
       }
     } else if (cell.type === 'chart') {
+      // When source table changes, update X/Y/Color dropdowns with new columns
+      const dsSelect = document.getElementById(`chart-ds-${idx}`) as HTMLSelectElement;
+      if (dsSelect) {
+        dsSelect.addEventListener('change', () => {
+          const newDs = dsSelect.value;
+          const newCols = columnCache[newDs] || [];
+          ['chart-x-', 'chart-y-'].forEach(prefix => {
+            const sel = document.getElementById(prefix + idx) as HTMLSelectElement;
+            if (sel) {
+              sel.innerHTML = newCols.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+            }
+          });
+          const colorSel = document.getElementById('chart-color-' + idx) as HTMLSelectElement;
+          if (colorSel) {
+            colorSel.innerHTML = '<option value="">(None)</option>' + newCols.map(c => `<option value="${escapeHtml(c)}">${escapeHtml(c)}</option>`).join('');
+          }
+          // Re-init custom selects for the updated dropdowns
+          ['chart-x-', 'chart-y-', 'chart-color-'].forEach(prefix => {
+            const sel = document.getElementById(prefix + idx) as HTMLSelectElement;
+            if (sel) sel.removeAttribute('data-initialized');
+          });
+          // Remove old custom containers for these selects
+          ['chart-x-', 'chart-y-', 'chart-color-'].forEach(prefix => {
+            const sel = document.getElementById(prefix + idx) as HTMLSelectElement;
+            if (sel && sel.parentElement?.classList.contains('custom-select-container')) {
+              const container = sel.parentElement;
+              container.parentNode?.insertBefore(sel, container);
+              container.remove();
+              sel.style.display = '';
+              sel.removeAttribute('data-initialized');
+            }
+          });
+          setTimeout(() => initCustomSelects(), 10);
+        });
+      }
       ['chart-ds-', 'chart-type-', 'chart-x-', 'chart-y-', 'chart-color-', 'chart-agg-'].forEach(prefix => {
-        const el = document.getElementById(prefix + idx) as HTMLInputElement | HTMLSelectElement;
+        const el = document.getElementById(prefix + idx) as HTMLSelectElement;
         if (el) el.addEventListener('change', () => {
             cells[idx].content = JSON.stringify({
-                ds: (document.getElementById(`chart-ds-${idx}`) as HTMLInputElement)?.value,
+                ds: (document.getElementById(`chart-ds-${idx}`) as HTMLSelectElement)?.value,
                 type: (document.getElementById(`chart-type-${idx}`) as HTMLSelectElement)?.value,
-                x: (document.getElementById(`chart-x-${idx}`) as HTMLInputElement)?.value,
-                y: (document.getElementById(`chart-y-${idx}`) as HTMLInputElement)?.value,
-                color: (document.getElementById(`chart-color-${idx}`) as HTMLInputElement)?.value,
+                x: (document.getElementById(`chart-x-${idx}`) as HTMLSelectElement)?.value,
+                y: (document.getElementById(`chart-y-${idx}`) as HTMLSelectElement)?.value,
+                color: (document.getElementById(`chart-color-${idx}`) as HTMLSelectElement)?.value,
                 agg: (document.getElementById(`chart-agg-${idx}`) as HTMLSelectElement)?.value
             });
             save();
         });
       });
     } else if (cell.type === 'summary') {
-      const el = document.getElementById(`summary-ds-${idx}`) as HTMLInputElement;
+      const el = document.getElementById(`summary-ds-${idx}`) as HTMLSelectElement;
       if (el) el.addEventListener('change', () => {
           cells[idx].content = JSON.stringify({ ds: el.value });
           save();
@@ -413,11 +456,11 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).chartRun = (idx: number) => {
-  const xCol = (document.getElementById(`chart-x-${idx}`) as HTMLInputElement)?.value;
-  const yCol = (document.getElementById(`chart-y-${idx}`) as HTMLInputElement)?.value;
-  const colorCol = (document.getElementById(`chart-color-${idx}`) as HTMLInputElement)?.value;
+  const xCol = (document.getElementById(`chart-x-${idx}`) as HTMLSelectElement)?.value;
+  const yCol = (document.getElementById(`chart-y-${idx}`) as HTMLSelectElement)?.value;
+  const colorCol = (document.getElementById(`chart-color-${idx}`) as HTMLSelectElement)?.value;
   const aggFn = (document.getElementById(`chart-agg-${idx}`) as HTMLSelectElement)?.value;
-  const dsKey = (document.getElementById(`chart-ds-${idx}`) as HTMLInputElement)?.value || 'table_0';
+  const dsKey = (document.getElementById(`chart-ds-${idx}`) as HTMLSelectElement)?.value || 'table_0';
   
   vscode.postMessage({
     type: 'chart-aggregate',
@@ -436,7 +479,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).summaryRun = (idx: number) => {
-  const dsKey = (document.getElementById(`summary-ds-${idx}`) as HTMLInputElement)?.value || 'table_0';
+  const dsKey = (document.getElementById(`summary-ds-${idx}`) as HTMLSelectElement)?.value || 'table_0';
   
   vscode.postMessage({
     type: 'summary-aggregate',

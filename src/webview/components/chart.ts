@@ -7,12 +7,25 @@ export function renderChartBlock(idx: number, content: string, escapeHtml: (s: a
     let state: any = {};
     try { state = JSON.parse(content || '{}'); } catch {}
 
-    const ds = escapeHtml(state.ds || `table_${idx > 0 ? idx - 1 : 0}`);
+    const ds = state.ds || `table_${idx > 0 ? idx - 1 : 0}`;
     const type = state.type || 'bar';
     const x = escapeHtml(state.x || '');
     const y = escapeHtml(state.y || '');
     const color = escapeHtml(state.color || '');
     const agg = state.agg || 'sum';
+
+    // Build source table dropdown from columnCache keys
+    const tableKeys = Object.keys(columnCache);
+    let dsOptions = '';
+    if (tableKeys.length === 0) {
+        dsOptions = `<option value="${escapeHtml(ds)}" selected>${escapeHtml(ds)}</option>`;
+    } else {
+        // If the saved ds is not in the cache, add it as first option
+        if (!tableKeys.includes(ds)) {
+            dsOptions += `<option value="${escapeHtml(ds)}" selected>${escapeHtml(ds)}</option>`;
+        }
+        dsOptions += tableKeys.map(k => `<option value="${escapeHtml(k)}" ${k === ds ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('');
+    }
 
     const cols = columnCache[ds] || [];
     const getOptions = (selected: string, includeEmpty: boolean = false) => {
@@ -29,7 +42,7 @@ export function renderChartBlock(idx: number, content: string, escapeHtml: (s: a
             
             <div class="block-field">
                 <label class="block-label">Source Table</label>
-                <input type="text" id="chart-ds-${idx}" value="${ds}" class="sqlnb-input" />
+                <select id="chart-ds-${idx}" class="sqlnb-select">${dsOptions}</select>
             </div>
             
             <div class="block-field">
@@ -119,9 +132,9 @@ function buildChart(idx: number, rows: any[], chartDom: HTMLElement) {
         }
     }
 
-    const xCol = (document.getElementById('chart-x-' + idx) as HTMLInputElement)?.value || '';
-    const yCol = (document.getElementById('chart-y-' + idx) as HTMLInputElement)?.value || '';
-    const colorCol = (document.getElementById('chart-color-' + idx) as HTMLInputElement)?.value || '';
+    const xCol = (document.getElementById('chart-x-' + idx) as HTMLSelectElement)?.value || '';
+    const yCol = (document.getElementById('chart-y-' + idx) as HTMLSelectElement)?.value || '';
+    const colorCol = (document.getElementById('chart-color-' + idx) as HTMLSelectElement)?.value || '';
     const aggFn = (document.getElementById('chart-agg-' + idx) as HTMLSelectElement)?.value || 'none';
     const type = (document.getElementById('chart-type-' + idx) as HTMLSelectElement)?.value || 'bar';
 
