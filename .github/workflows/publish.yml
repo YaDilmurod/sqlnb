@@ -5,7 +5,8 @@ on:
     branches:
       - main
     paths:
-      - 'package.json' # Only triggers when you bump the version!
+      - 'package.json' # Triggers when you bump the version
+      - '.github/**'   # Also trigger if we change the workflow itself
 
 jobs:
   publish:
