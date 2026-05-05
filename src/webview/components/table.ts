@@ -97,7 +97,14 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
         </th>`;
     }).join('');
 
-    const bodyRows = rows.map((row: any, i: number) => {
+    const rowCount = msg.rows ? msg.rows.length : 0;
+    let summaryMsg = `${rowCount} rows`;
+    if (hasMore) {
+        summaryMsg = `${rowCount}+ rows (truncated)`;
+    }
+
+    // Build body rows with row numbers
+    const bodyRowsWithNum = rows.map((row: any, i: number) => {
         const bg = i % 2 === 0 ? '#fff' : '#f9f9f9';
         const cellsHtml = headers.map((h: string) => {
             const val = row[h];
@@ -111,14 +118,8 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
             const display = str.length > 120 ? str.slice(0, 120) + '…' : str;
             return `<td class="sqlnb-cell" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid #ddd;border-right:1px solid #eee;font-family:var(--vscode-editor-font-family);font-size:13px;background:${bg};${stickyStyle}" title="${escapeHtml(str)}">${escapeHtml(display)}</td>`;
         }).join('');
-        return `<tr>${cellsHtml}</tr>`;
+        return `<tr><td class="sqlnb-rownum" style="padding:4px 8px;border-bottom:1px solid #ddd;border-right:1px solid #e5e7eb;background:${bg};color:#9ca3af;font-size:11px;text-align:right;user-select:none;min-width:36px;">${i + 1}</td>${cellsHtml}</tr>`;
     }).join('');
-
-    const rowCount = msg.rows ? msg.rows.length : 0;
-    let summaryMsg = `${rowCount} rows`;
-    if (hasMore) {
-        summaryMsg = `${rowCount}+ rows (truncated)`;
-    }
 
     return `
     <style>
@@ -148,18 +149,21 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
       .sqlnb-agg-value { font-weight:600; color:#111827; font-variant-numeric:tabular-nums; }
       .sqlnb-export-btn { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; font-size:11px; font-weight:600; color:#4b5563; background:#fff; border:1px solid #d1d5db; border-radius:4px; cursor:pointer; transition:all .15s; white-space:nowrap; }
       .sqlnb-export-btn:hover { background:#f3f4f6; border-color:#9ca3af; color:#111827; }
+      .sqlnb-select-all { cursor:pointer; opacity:0.4; transition:opacity .15s; }
+      .sqlnb-select-all:hover { opacity:1; }
+      .sqlnb-select-all.sqlnb-all-selected { opacity:1; color:#4f46e5; }
     </style>
-    <div id="sqlnb-advanced-table-${idx}" style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#333;">
+    <div id="sqlnb-advanced-table-${idx}" tabindex="0" style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#333;outline:none;">
         <div style="margin-bottom:8px;font-size:12px;color:#666;">
             ${summaryMsg} · ${elapsed}
         </div>
         <div class="sqlnb-table-container" style="max-height:400px;overflow:auto;border:1px solid #ddd;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.05);background:#fff;overscroll-behavior:auto;">
             <table style="width:100%;border-collapse:collapse;text-align:left;white-space:nowrap;">
                 <thead style="position:sticky;top:0;background:#fff;box-shadow:0 1px 0 #ddd;z-index:4;">
-                    <tr>${headerCells}</tr>
+                    <tr><th class="sqlnb-select-all-th" style="padding:6px 8px;border-bottom:2px solid #ddd;border-right:1px solid #e5e7eb;text-align:center;min-width:36px;" title="Select All"><span class="sqlnb-select-all"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M9 12l2 2 4-4"/></svg></span></th>${headerCells}</tr>
                 </thead>
                 <tbody>
-                    ${bodyRows}
+                    ${bodyRowsWithNum}
                 </tbody>
             </table>
         </div>
@@ -193,6 +197,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
     const signal = ac.signal;
 
     const originalHeaders = msg.fields ? msg.fields.map((f: any) => f.name) : Object.keys(msg.rows[0] || {});
+    const rows = msg.rows || [];
     const pinned = pinnedColumnsMap.get(idx) || [];
     const pinnedHeaders = pinned.filter((h: string) => originalHeaders.includes(h));
     const unpinnedHeaders = originalHeaders.filter((h: string) => !pinned.includes(h));
@@ -303,6 +308,11 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
     document.addEventListener('click', (e: any) => {
         if (!e.target.closest('.sqlnb-sort-btn') && !e.target.closest('.sqlnb-sort-menu')) closeAllSortMenus();
         if (!e.target.closest('.sqlnb-profile-btn') && !e.target.closest('.sqlnb-profile-popup')) closeAllProfilePopups();
+        // Click outside the table clears cell selection
+        if (!e.target.closest(`#sqlnb-advanced-table-${idx}`)) {
+            clearSelection();
+            updateAggBar();
+        }
     }, { signal });
 
     // Cell selection & Aggregation
@@ -449,6 +459,109 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
     });
 
     window.addEventListener('mouseup', () => { isDragging = false; }, { signal });
+
+    // Select All button
+    const selectAllBtn = root.querySelector('.sqlnb-select-all');
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('click', (e: any) => {
+            e.stopPropagation();
+            const totalCells = rows.length * headers.length;
+            if (selectedCells.size === totalCells) {
+                // Deselect all
+                clearSelection();
+                selectAllBtn.classList.remove('sqlnb-all-selected');
+            } else {
+                // Select all
+                clearSelection();
+                for (let r = 0; r < rows.length; r++) {
+                    for (const h of headers) {
+                        selectedCells.add(getCellKey(r, h));
+                        applyHighlight(r, h, true);
+                    }
+                }
+                selectAllBtn.classList.add('sqlnb-all-selected');
+            }
+            updateAggBar();
+        });
+    }
+
+    // Cmd/Ctrl+C copy selected cells to clipboard
+    function buildCopyText(): string {
+        if (selectedCells.size === 0) return '';
+        // Find the bounding rectangle of selected cells
+        let minRow = Infinity, maxRow = -1;
+        let minColIdx = Infinity, maxColIdx = -1;
+        selectedCells.forEach((key) => {
+            const sepIdx = key.indexOf(':');
+            const r = parseInt(key.substring(0, sepIdx));
+            const c = key.substring(sepIdx + 1);
+            const cIdx = headers.indexOf(c);
+            if (r < minRow) minRow = r;
+            if (r > maxRow) maxRow = r;
+            if (cIdx < minColIdx) minColIdx = cIdx;
+            if (cIdx > maxColIdx) maxColIdx = cIdx;
+        });
+        const lines: string[] = [];
+        for (let r = minRow; r <= maxRow; r++) {
+            const vals: string[] = [];
+            for (let cIdx = minColIdx; cIdx <= maxColIdx; cIdx++) {
+                const h = headers[cIdx];
+                if (!h) continue;
+                const key = getCellKey(r, h);
+                if (selectedCells.has(key)) {
+                    const cell = root.querySelector(`.sqlnb-cell[data-row="${r}"][data-col="${escapeHtml(h)}"]`);
+                    vals.push(cell ? (cell.getAttribute('data-val') ?? '') : '');
+                } else {
+                    vals.push('');
+                }
+            }
+            lines.push(vals.join('\t'));
+        }
+        return lines.join('\n');
+    }
+
+    root.addEventListener('keydown', (e: any) => {
+        // Cmd+C / Ctrl+C
+        if ((e.metaKey || e.ctrlKey) && e.key === 'c') {
+            const text = buildCopyText();
+            if (text) {
+                e.preventDefault();
+                e.stopPropagation();
+                navigator.clipboard.writeText(text).catch(() => {
+                    // Fallback: use a temporary textarea
+                    const ta = document.createElement('textarea');
+                    ta.value = text;
+                    ta.style.position = 'fixed';
+                    ta.style.left = '-9999px';
+                    document.body.appendChild(ta);
+                    ta.select();
+                    document.execCommand('copy');
+                    document.body.removeChild(ta);
+                });
+            }
+        }
+        // Cmd+A / Ctrl+A to select all
+        if ((e.metaKey || e.ctrlKey) && e.key === 'a') {
+            e.preventDefault();
+            e.stopPropagation();
+            clearSelection();
+            for (let r = 0; r < rows.length; r++) {
+                for (const h of headers) {
+                    selectedCells.add(getCellKey(r, h));
+                    applyHighlight(r, h, true);
+                }
+            }
+            if (selectAllBtn) selectAllBtn.classList.add('sqlnb-all-selected');
+            updateAggBar();
+        }
+    }, { signal });
+
+    // Focus the table root when a cell is clicked so keydown events fire
+    root.addEventListener('mousedown', (e: any) => {
+        if (e.target.closest('.sqlnb-cell')) {
+            root.focus({ preventScroll: true });
+        }
+    }, { signal });
 
     const tc = root.querySelector('.sqlnb-table-container');
     if (tc) {
