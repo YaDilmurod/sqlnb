@@ -261,6 +261,79 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           }
           break;
         }
+        case 'export-data': {
+          const { format, cellName, headers, rows } = msg;
+          if (!rows || rows.length === 0) break;
+
+          const escCsv = (val: any): string => {
+            if (val === null || val === undefined) return '';
+            const str = String(val);
+            if (str.includes(',') || str.includes('\n') || str.includes('"')) {
+              return `"${str.replace(/"/g, '""')}"`;
+            }
+            return str;
+          };
+
+          if (format === 'csv') {
+            const csvLines = [headers.join(',')];
+            for (const row of rows) {
+              csvLines.push(headers.map((h: string) => escCsv(row[h])).join(','));
+            }
+            const csv = csvLines.join('\n');
+            const uri = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file(`${cellName}.csv`),
+              filters: { 'CSV Files': ['csv'] },
+              saveLabel: 'Export CSV',
+            });
+            if (uri) {
+              await vscode.workspace.fs.writeFile(uri, Buffer.from(csv, 'utf-8'));
+              vscode.window.showInformationMessage(`Exported ${rows.length} rows to ${uri.fsPath}`);
+            }
+          } else if (format === 'excel') {
+            // Generate XML Spreadsheet (SpreadsheetML) — opens in Excel/LibreOffice/Numbers without extra deps
+            const escXml = (v: any): string => {
+              if (v === null || v === undefined) return '';
+              return String(v).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+            };
+            let xml = '<?xml version="1.0" encoding="UTF-8"?>\n';
+            xml += '<?mso-application progid="Excel.Sheet"?>\n';
+            xml += '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"\n';
+            xml += '  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">\n';
+            xml += `<Worksheet ss:Name="${escXml(cellName)}">\n<Table>\n`;
+            // Header row
+            xml += '<Row>\n';
+            for (const h of headers) {
+              xml += `  <Cell><Data ss:Type="String">${escXml(h)}</Data></Cell>\n`;
+            }
+            xml += '</Row>\n';
+            // Data rows
+            for (const row of rows) {
+              xml += '<Row>\n';
+              for (const h of headers) {
+                const val = row[h];
+                if (val === null || val === undefined) {
+                  xml += '  <Cell><Data ss:Type="String"></Data></Cell>\n';
+                } else if (typeof val === 'number') {
+                  xml += `  <Cell><Data ss:Type="Number">${val}</Data></Cell>\n`;
+                } else {
+                  xml += `  <Cell><Data ss:Type="String">${escXml(val)}</Data></Cell>\n`;
+                }
+              }
+              xml += '</Row>\n';
+            }
+            xml += '</Table>\n</Worksheet>\n</Workbook>';
+            const uri = await vscode.window.showSaveDialog({
+              defaultUri: vscode.Uri.file(`${cellName}.xls`),
+              filters: { 'Excel Files': ['xls', 'xlsx'] },
+              saveLabel: 'Export Excel',
+            });
+            if (uri) {
+              await vscode.workspace.fs.writeFile(uri, Buffer.from(xml, 'utf-8'));
+              vscode.window.showInformationMessage(`Exported ${rows.length} rows to ${uri.fsPath}`);
+            }
+          }
+          break;
+        }
       }
     });
   }

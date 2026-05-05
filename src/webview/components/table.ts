@@ -146,6 +146,8 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
       .sqlnb-agg-item { display:flex; align-items:center; gap:4px; }
       .sqlnb-agg-label { color:#6b7280; font-weight:600; font-size:11px; text-transform:uppercase; }
       .sqlnb-agg-value { font-weight:600; color:#111827; font-variant-numeric:tabular-nums; }
+      .sqlnb-export-btn { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; font-size:11px; font-weight:600; color:#4b5563; background:#fff; border:1px solid #d1d5db; border-radius:4px; cursor:pointer; transition:all .15s; white-space:nowrap; }
+      .sqlnb-export-btn:hover { background:#f3f4f6; border-color:#9ca3af; color:#111827; }
     </style>
     <div id="sqlnb-advanced-table-${idx}" style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#333;">
         <div style="margin-bottom:8px;font-size:12px;color:#666;">
@@ -165,6 +167,14 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>
             <span class="sqlnb-agg-item" style="color:#888;">${elapsed}</span>
+            <span style="margin-left:auto;display:flex;gap:6px;">
+                <button class="sqlnb-export-btn" data-export-type="csv" data-export-idx="${idx}" title="Export to CSV">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>CSV
+                </button>
+                <button class="sqlnb-export-btn" data-export-type="excel" data-export-idx="${idx}" title="Export to Excel (.xlsx)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Excel
+                </button>
+            </span>
         </div>
         ${allPopups}
     </div>`;
@@ -321,10 +331,19 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
         const rowCount = msg.rows ? msg.rows.length : 0;
         const safeMs = msg.elapsedMs ?? 0;
         const elapsed = safeMs < 1000 ? `${safeMs.toFixed(1)}ms` : `${(safeMs / 1000).toFixed(2)}s`;
+        const exportBtns = `
+            <span style="margin-left:auto;display:flex;gap:6px;">
+                <button class="sqlnb-export-btn" data-export-type="csv" data-export-idx="${idx}" title="Export to CSV">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>CSV
+                </button>
+                <button class="sqlnb-export-btn" data-export-type="excel" data-export-idx="${idx}" title="Export to Excel (.xlsx)">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Excel
+                </button>
+            </span>`;
         const defaultInfo = `
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>
-            <span class="sqlnb-agg-item" style="color:#888;">${elapsed}</span>`;
+            <span class="sqlnb-agg-item" style="color:#888;">${elapsed}</span>${exportBtns}`;
 
         if (selectedCells.size === 0) {
             aggBar.innerHTML = defaultInfo;
@@ -348,7 +367,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
         });
 
         if (numericValues.length === 0) {
-            aggBar.innerHTML = `<span style="color:#888;">Selected ${selectedCells.size} cell${selectedCells.size > 1 ? 's' : ''} — no numeric values</span>`;
+            aggBar.innerHTML = `<span style="color:#888;">Selected ${selectedCells.size} cell${selectedCells.size > 1 ? 's' : ''} — no numeric values</span>${exportBtns}`;
             aggBar.style.display = 'flex';
             return;
         }
@@ -365,7 +384,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Sum:</span> <span class="sqlnb-agg-value">${fmt(sum)}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Avg:</span> <span class="sqlnb-agg-value">${fmt(avg)}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Min:</span> <span class="sqlnb-agg-value">${fmt(min)}</span></span>
-            <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Max:</span> <span class="sqlnb-agg-value">${fmt(max)}</span></span>
+            <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Max:</span> <span class="sqlnb-agg-value">${fmt(max)}</span></span>${exportBtns}
         `;
         aggBar.style.display = 'flex';
     }

@@ -819,5 +819,23 @@ document.addEventListener('click', (e) => {
       if (popup) popup.style.display = 'none';
    }
 });
+// Export button delegation (CSV / Excel)
+document.addEventListener('click', (e) => {
+  const target = e.target as HTMLElement;
+  const btn = target.closest('.sqlnb-export-btn') as HTMLElement;
+  if (!btn) return;
+  const format = btn.getAttribute('data-export-type');
+  const idxStr = btn.getAttribute('data-export-idx');
+  if (!format || !idxStr) return;
+  const idx = parseInt(idxStr, 10);
+  const cell = cells[idx];
+  if (!cell || !cell._outputData) return;
+  const msg = cell._outputData;
+  if (!msg.rows || msg.rows.length === 0) return;
+  const headers = msg.fields ? msg.fields.map((f: any) => f.name) : Object.keys(msg.rows[0]);
+  const cellName = cell.name || `table_${idx}`;
+  vscode.postMessage({ type: 'export-data', format, cellName, headers, rows: msg.rows });
+});
+
 // Kick off first render
 renderApp();
