@@ -73,7 +73,7 @@ export async function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('sqlNotebook.newNotebook', async () => {
-      const uri = vscode.Uri.parse('untitled:Untitled-1.sqlnb');
+      const uri = vscode.Uri.parse(`untitled:Untitled-${Date.now()}.sqlnb`);
       const doc = await vscode.workspace.openTextDocument(uri);
       
       const initialData = {

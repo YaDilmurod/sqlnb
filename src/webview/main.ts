@@ -65,7 +65,9 @@ function save() {
 // Simple Markdown parser
 function renderMarkdown(md: string): string {
   if (!md) return '';
-  return md
+  // Escape HTML to prevent XSS from shared notebook files
+  let safe = escapeHtml(md);
+  return safe
     .replace(/^### (.*$)/gim, '<h3>$1</h3>')
     .replace(/^## (.*$)/gim, '<h2>$1</h2>')
     .replace(/^# (.*$)/gim, '<h1>$1</h1>')
@@ -77,6 +79,7 @@ function renderMarkdown(md: string): string {
     .map(line => {
       const trimmed = line.trim();
       if (!trimmed) return '';
+      if (trimmed.startsWith('&lt;h') || trimmed.startsWith('&lt;pre')) return line;
       if (trimmed.startsWith('<h') || trimmed.startsWith('<pre')) return line;
       return '<p>' + line + '</p>';
     })
@@ -173,6 +176,10 @@ function renderCells() {
   if (!container) return;
   container.innerHTML = '';
 
+  // Dispose ALL Monaco editors before re-rendering to prevent leaks on reorder (BUG-9)
+  monacoEditors.forEach(editor => { try { editor.dispose(); } catch {} });
+  monacoEditors.clear();
+
   cells.forEach((cell, idx) => {
     const cellEl = document.createElement('div');
     cellEl.className = 'cell';
@@ -181,19 +188,59 @@ function renderCells() {
     const meta = CELL_TYPES[cell.type] || { label: 'Unknown', badgeClass: '', needsConnection: false };
     const disabledAttr = (!isConnected && meta.needsConnection) ? ' disabled' : '';
 
-    // 1. Toolbar — badge from registry
+    // 1. Toolbar — badge from registry, actions, and status — consistent for ALL cell types
     let toolbar = '<div class="cell-toolbar">';
     toolbar += `<div class="cell-badge ${meta.badgeClass}">${meta.label}</div>`;
+
+    // Per-type inline controls (name input, source table dropdown, etc.)
     if (cell.type === 'sql') {
       const cellName = cell.name || 'table_' + idx;
       toolbar += '<input type="text" id="cell-name-' + idx + '" class="cell-name-input" value="' + escapeHtml(cellName) + '" style="background:transparent;border:none;border-bottom:1px dotted var(--border-color);outline:none;font-size:12px;color:var(--text-muted);padding:2px 4px;width:120px;margin-left:8px;font-family:var(--font-mono);" placeholder="table_' + idx + '" />';
     }
+    if (cell.type === 'summary') {
+      // Source table dropdown — rendered in the outer toolbar for consistency
+      let state: any = {};
+      try { state = JSON.parse(cell.content || '{}'); } catch {}
+      const ds = state.ds || `table_${idx > 0 ? idx - 1 : 0}`;
+      const tableKeys = Object.keys(columnCache);
+      let dsOptions = '';
+      if (tableKeys.length === 0) {
+        dsOptions = `<option value="${escapeHtml(ds)}" selected>${escapeHtml(ds)}</option>`;
+      } else {
+        if (!tableKeys.includes(ds)) {
+          dsOptions += `<option value="${escapeHtml(ds)}" selected>${escapeHtml(ds)}</option>`;
+        }
+        dsOptions += tableKeys.map(k => `<option value="${escapeHtml(k)}" ${k === ds ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('');
+      }
+      toolbar += '<label style="display:flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;color:var(--text-muted);font-weight:500;">Source <select id="summary-ds-' + idx + '" class="sqlnb-select" style="width:140px;font-size:12px;padding:3px 8px;">' + dsOptions + '</select></label>';
+    }
+
+    // Status indicator — unified location in toolbar for all types that need it
+    if (cell.type === 'schema') {
+      toolbar += '<span class="cell-status" id="schema-status-' + idx + '" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>';
+    } else if (cell.type === 'chart') {
+      toolbar += '<span class="cell-status" id="chart-status-' + idx + '" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>';
+    } else if (cell.type === 'summary') {
+      toolbar += '<span class="cell-status" id="summary-status-' + idx + '" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>';
+    }
     
     toolbar += '<div class="cell-actions">';
+
+    // Action buttons — consistent placement for all cell types
     if (cell.type === 'sql') {
       toolbar += '<button class="btn-action btn-run" data-action="runSql" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
       toolbar += '<button class="btn-icon" data-action="toggleWiki" data-idx="' + idx + '" title="Wiki / Examples"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></button>';
     }
+    if (cell.type === 'schema') {
+      toolbar += '<button class="btn-action btn-run" data-action="schemaRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
+    }
+    if (cell.type === 'chart') {
+      toolbar += '<button class="btn-action btn-run" data-action="chartRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Render</button>';
+    }
+    if (cell.type === 'summary') {
+      toolbar += '<button class="btn-action btn-run" data-action="summaryRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Profile</button>';
+    }
+
     if (cell.type !== 'connection') {
       if (idx > 0) toolbar += '<button class="btn-icon" data-action="moveCellUp" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>';
       if (idx < cells.length - 1) toolbar += '<button class="btn-icon" data-action="moveCellDown" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg></button>';
@@ -249,13 +296,8 @@ function renderCells() {
     cellEl.innerHTML = toolbar + content;
     container.appendChild(cellEl);
 
-    // Attach Event Listeners
+      // Attach Event Listeners
     if (cell.type === 'sql') {
-      // Dispose previous Monaco editor for this cell if exists
-      if (monacoEditors.has(idx)) {
-        try { monacoEditors.get(idx).dispose(); } catch {}
-        monacoEditors.delete(idx);
-      }
       loadMonaco(() => {
         const editor = initMonacoEditor(
           'sql-container-' + idx,
@@ -402,7 +444,7 @@ function renderCells() {
 
     // Disable all run-type buttons when not connected
     if (!isConnected) {
-      const runActions = ['chartRun', 'summaryRun', 'schemaRun'];
+      const runActions = ['runSql', 'chartRun', 'summaryRun', 'schemaRun'];
       runActions.forEach(action => {
         container.querySelectorAll(`button[data-action="${action}"]`).forEach((btn: any) => {
           btn.disabled = true;
@@ -490,6 +532,9 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 
 (window as any).deleteCell = (idx: number) => {
   if (cells[idx]?.type === 'connection') return; // Connection cell cannot be deleted
+  // Clean up columnCache entry for this cell to prevent stale data (BUG-6)
+  const cellName = cells[idx]?.name || `table_${idx}`;
+  delete columnCache[cellName];
   cells.splice(idx, 1);
   save();
   renderCells();
@@ -610,9 +655,9 @@ window.addEventListener('message', event => {
        const msgEl = document.getElementById('conn-msg-' + connIdx);
        if (msgEl) {
            if (msg.error) {
-               msgEl.innerHTML = '<span style="color:#dc2626;">' + escapeHtml(msg.error) + '</span>';
+               msgEl.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(msg.error) + '</span>';
            } else if (msg.success) {
-               msgEl.innerHTML = '<span style="color:#10b981;">Connected to ' + escapeHtml(msg.dbName || 'db') + '</span>';
+               msgEl.innerHTML = '<span style="color:var(--success);">Connected to ' + escapeHtml(msg.dbName || 'db') + '</span>';
            }
        }
     }

@@ -36,7 +36,8 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
     const unpinnedHeaders = originalHeaders.filter((h: string) => !pinned.includes(h));
     const headers = [...pinnedHeaders, ...unpinnedHeaders];
 
-    const elapsed = elapsedMs < 1000 ? `${elapsedMs.toFixed(1)}ms` : `${(elapsedMs / 1000).toFixed(2)}s`;
+    const safeElapsedMs = elapsedMs ?? 0;
+    const elapsed = safeElapsedMs < 1000 ? `${safeElapsedMs.toFixed(1)}ms` : `${(safeElapsedMs / 1000).toFixed(2)}s`;
 
     let allPopups = '';
 
@@ -308,7 +309,8 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
         if (!aggBar) return;
 
         const rowCount = msg.rows ? msg.rows.length : 0;
-        const elapsed = msg.elapsedMs < 1000 ? `${msg.elapsedMs.toFixed(1)}ms` : `${(msg.elapsedMs / 1000).toFixed(2)}s`;
+        const safeMs = msg.elapsedMs ?? 0;
+        const elapsed = safeMs < 1000 ? `${safeMs.toFixed(1)}ms` : `${(safeMs / 1000).toFixed(2)}s`;
         const defaultInfo = `
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>

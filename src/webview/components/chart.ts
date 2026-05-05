@@ -82,12 +82,11 @@ export function renderChartBlock(idx: number, content: string, escapeHtml: (s: a
                 <option value="max" ${agg === 'max' ? 'selected' : ''}>Max</option>
             </select>
             </div>
-
-            <button class="btn-primary" data-action="chartRun" data-idx="${idx}" style="width:100%;margin-top:4px;">Render Chart</button>
-            <div class="block-status" id="chart-status-${idx}" style="margin-top:8px;"></div>
         </div>
         <div style="flex:1;min-height:400px;border:1px solid var(--border-color);border-radius:0 6px 6px 0;position:relative;background:var(--bg-surface);">
-            <div id="chart-canvas-${idx}" style="position:absolute;top:12px;left:12px;right:12px;bottom:12px;"></div>
+            <div id="chart-canvas-${idx}" style="position:absolute;top:12px;left:12px;right:12px;bottom:12px;">
+                <div class="block-body-empty" style="display:flex;align-items:center;justify-content:center;height:100%;">Configure settings and click "Render" to visualize.</div>
+            </div>
         </div>
     </div>`;
 }
@@ -100,7 +99,8 @@ export function handleChartAggregateResult(msg: any, escapeHtml: (s: any) => str
         return;
     }
     
-    if (status) status.innerText = 'Loaded in ' + msg.elapsedMs.toFixed(1) + 'ms';
+    const safeElapsedMs = msg.elapsedMs ?? 0;
+    if (status) status.innerText = safeElapsedMs.toFixed(1) + 'ms';
 
     const chartDom = document.getElementById('chart-canvas-' + idx);
     if (!chartDom) return;
@@ -118,6 +118,20 @@ export function handleChartAggregateResult(msg: any, escapeHtml: (s: any) => str
 function buildChart(idx: number, rows: any[], chartDom: HTMLElement) {
     if (!window._echartsInstance) window._echartsInstance = {};
     let myChart = window._echartsInstance[idx];
+    if (myChart) {
+        // Dispose old instance if the DOM element changed (cell re-render)
+        try {
+            const existingDom = myChart.getDom();
+            if (existingDom !== chartDom) {
+                myChart.dispose();
+                myChart = null;
+                window._echartsInstance[idx] = null;
+            }
+        } catch {
+            myChart = null;
+            window._echartsInstance[idx] = null;
+        }
+    }
     if (!myChart) {
         myChart = window.echarts.init(chartDom);
         window._echartsInstance[idx] = myChart;
@@ -125,7 +139,7 @@ function buildChart(idx: number, rows: any[], chartDom: HTMLElement) {
         if (!window._echartsResizeHandler) {
             window._echartsResizeHandler = () => {
                 for (const key of Object.keys(window._echartsInstance)) {
-                    try { window._echartsInstance[key].resize(); } catch {}
+                    try { window._echartsInstance[key]?.resize(); } catch {}
                 }
             };
             window.addEventListener('resize', window._echartsResizeHandler);

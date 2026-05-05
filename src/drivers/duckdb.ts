@@ -39,10 +39,9 @@ export class DuckDbDriver implements IDatabaseDriver {
   private _rewriteCsvPaths(query: string): string {
     return query.replace(
       /\bFROM\s+'([^']+\.csv)'/gi,
-      (match, filePath) => {
+      (match, filePath, offset) => {
         // Avoid double-wrapping if already inside a function call
-        const beforeIdx = query.indexOf(match);
-        const charBefore = beforeIdx > 0 ? query[beforeIdx - 1] : '';
+        const charBefore = offset > 0 ? query[offset - 1] : '';
         if (charBefore === '(') return match;
         return `FROM read_csv_auto('${filePath}', sample_size=-1)`;
       }

@@ -78,19 +78,21 @@ export class ProfilerQueryBuilder {
         let cteIndex = 0;
 
         for (const [col, type] of Object.entries(columnTypes)) {
-            const qCol = `"${col}"`;
+            // Escape double quotes in column names to prevent SQL injection/breakage
+            const safeCol = col.replace(/"/g, '""');
+            const qCol = `"${safeCol}"`;
             
             // Common selects for all types
-            selects.push(`COUNT(DISTINCT ${qCol}) AS "${col}__distinct"`);
-            selects.push(`SUM(CASE WHEN ${qCol} IS NULL THEN 1 ELSE 0 END) AS "${col}__nulls"`);
+            selects.push(`COUNT(DISTINCT ${qCol}) AS "${safeCol}__distinct"`);
+            selects.push(`SUM(CASE WHEN ${qCol} IS NULL THEN 1 ELSE 0 END) AS "${safeCol}__nulls"`);
 
             const strategy = this.strategies.get(type) || this.strategies.get('string')!;
             
-            selects.push(...strategy.getSelects(col, qCol, driverType));
+            selects.push(...strategy.getSelects(safeCol, qCol, driverType));
 
             if (strategy.getCTEs) {
                 const cteAlias = `_sqlnb_top_${cteIndex++}`;
-                const cteData = strategy.getCTEs(col, qCol, cteAlias);
+                const cteData = strategy.getCTEs(safeCol, qCol, cteAlias);
                 if (cteData) {
                     topCTEs.push(cteData.cte);
                     topJoinSelects.push(...cteData.joinSelects);

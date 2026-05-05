@@ -21,7 +21,7 @@ export class PostgresDriver implements IDatabaseDriver {
   readonly type = 'postgres' as const;
   private _pool: Pool | null = null;
   private _connectionString: string = '';
-  private _activePid: number | null = null;
+  private _activePids: Set<number> = new Set();
 
   isConnected(): boolean {
     return this._pool !== null;
@@ -74,20 +74,23 @@ export class PostgresDriver implements IDatabaseDriver {
   /**
    * Get the backend PID from a client connection and store it for cancellation.
    */
-  private async _trackPid(client: PoolClient): Promise<void> {
+  private async _trackPid(client: PoolClient): Promise<number | null> {
     try {
       const res = await client.query('SELECT pg_backend_pid()');
-      this._activePid = res.rows[0].pg_backend_pid;
+      const pid = res.rows[0].pg_backend_pid;
+      this._activePids.add(pid);
+      return pid;
     } catch {
-      this._activePid = null;
+      return null;
     }
   }
 
   async executeSelect(query: string, maxRows: number): Promise<QueryResult> {
     if (!this._pool) throw new Error('Not connected');
     const client = await this._pool.connect();
+    let pid: number | null = null;
     try {
-      await this._trackPid(client);
+      pid = await this._trackPid(client);
       await client.query('BEGIN');
       await client.query(`DECLARE _sqlnb_cursor NO SCROLL CURSOR FOR ${query}`);
       const result = await client.query(`FETCH ${maxRows + 1} FROM _sqlnb_cursor`);
@@ -112,7 +115,7 @@ export class PostgresDriver implements IDatabaseDriver {
       try { await client.query('ROLLBACK'); } catch { }
       throw err;
     } finally {
-      this._activePid = null;
+      if (pid) this._activePids.delete(pid);
       client.release();
     }
   }
@@ -120,8 +123,9 @@ export class PostgresDriver implements IDatabaseDriver {
   async executeStatement(query: string): Promise<QueryResult> {
     if (!this._pool) throw new Error('Not connected');
     const client = await this._pool.connect();
+    let pid: number | null = null;
     try {
-      await this._trackPid(client);
+      pid = await this._trackPid(client);
       const result = await client.query(query);
       return {
         rows: sanitizeRows(result.rows || []),
@@ -131,7 +135,7 @@ export class PostgresDriver implements IDatabaseDriver {
         hasMore: false,
       };
     } finally {
-      this._activePid = null;
+      if (pid) this._activePids.delete(pid);
       client.release();
     }
   }
@@ -153,20 +157,34 @@ export class PostgresDriver implements IDatabaseDriver {
   }
 
   async cancelQuery(_pid?: number): Promise<void> {
-    const targetPid = _pid || this._activePid;
-    if (!this._pool || !targetPid) return;
-    // Use a SEPARATE connection to send the cancel signal
+    if (!this._pool) return;
+    if (_pid) {
+      // Cancel a specific PID
+      const client = await this._pool.connect();
+      try {
+        await client.query(`SELECT pg_cancel_backend($1)`, [_pid]);
+      } finally {
+        client.release();
+      }
+      return;
+    }
+    // Cancel ALL active queries
+    const pids = Array.from(this._activePids);
+    if (pids.length === 0) return;
     const client = await this._pool.connect();
     try {
-      await client.query(`SELECT pg_cancel_backend($1)`, [targetPid]);
+      for (const pid of pids) {
+        await client.query(`SELECT pg_cancel_backend($1)`, [pid]);
+      }
     } finally {
       client.release();
     }
   }
 
   async getBackendPid(): Promise<number | undefined> {
-    // Return the currently tracked active PID if available
-    return this._activePid ?? undefined;
+    // Return any currently tracked active PID if available
+    const first = this._activePids.values().next();
+    return first.done ? undefined : first.value;
   }
 
   /**
@@ -175,12 +193,13 @@ export class PostgresDriver implements IDatabaseDriver {
   async executeRaw(query: string): Promise<{ rows: Record<string, any>[] }> {
     if (!this._pool) throw new Error('Not connected');
     const client = await this._pool.connect();
+    let pid: number | null = null;
     try {
-      await this._trackPid(client);
+      pid = await this._trackPid(client);
       const result = await client.query(query);
       return { rows: sanitizeRows(result.rows || []) };
     } finally {
-      this._activePid = null;
+      if (pid) this._activePids.delete(pid);
       client.release();
     }
   }

@@ -209,11 +209,15 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             webviewPanel.webview.postMessage({ type: 'chart-aggregate-result', requestId: msg.requestId, chartIndex: msg.chartIndex, error: `No data for table '${msg.datasetKey}'. Run SQL cell first.` });
             break;
           }
+          if (!session.driver || !session.driver.isConnected()) {
+            webviewPanel.webview.postMessage({ type: 'chart-aggregate-result', requestId: msg.requestId, chartIndex: msg.chartIndex, error: 'Not connected to a database.' });
+            break;
+          }
           const cleanQuery = stored.query.trim().replace(/;+$/, '');
           const q = buildAggregationQuery(cleanQuery, msg.xCol, msg.yCol, msg.aggFn, msg.colorCol, session.driverType as 'postgres'|'duckdb', msg.extraYCols);
           const start = performance.now();
           try {
-            const res = await session.driver!.executeRaw(q);
+            const res = await session.driver.executeRaw(q);
             webviewPanel.webview.postMessage({ type: 'chart-aggregate-result', requestId: msg.requestId, chartIndex: msg.chartIndex, rows: res.rows || [], elapsedMs: performance.now() - start });
           } catch (err: any) {
             webviewPanel.webview.postMessage({ type: 'chart-aggregate-result', requestId: msg.requestId, chartIndex: msg.chartIndex, error: err.message, elapsedMs: performance.now() - start });
@@ -224,6 +228,10 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           const stored = session.resultStore.get(msg.datasetKey);
           if (!stored) {
             webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, error: `No data for table '${msg.datasetKey}'. Run SQL cell first.` });
+            break;
+          }
+          if (!session.driver || !session.driver.isConnected()) {
+            webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, error: 'Not connected to a database.' });
             break;
           }
           // Infer column types from first 50 rows
@@ -246,7 +254,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           const q = buildSummaryQuery(cleanQuery, columnTypes, session.driverType as 'postgres'|'duckdb');
           const start = performance.now();
           try {
-            const res = await session.driver!.executeRaw(q);
+            const res = await session.driver.executeRaw(q);
             webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, rows: res.rows || [], columnTypes, elapsedMs: performance.now() - start });
           } catch (err: any) {
             webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, error: err.message, elapsedMs: performance.now() - start });

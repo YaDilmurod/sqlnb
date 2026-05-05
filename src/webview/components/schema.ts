@@ -2,12 +2,8 @@ declare const window: any;
 declare const document: any;
 
 export function renderSchemaBlock(idx: number, escapeHtml: (s: any) => string): string {
+    // No inner toolbar — Refresh button and status are now in the shared outer cell-toolbar
     return `<div class="schema-root" id="schema-root-${idx}">
-        <div class="block-toolbar">
-            <h4>🗂 Database Schema</h4>
-            <button class="btn-primary" data-action="schemaRun" data-idx="${idx}" style="padding:4px 12px;">Refresh</button>
-            <span class="block-status" id="schema-status-${idx}"></span>
-        </div>
         <div class="block-body" id="schema-content-${idx}" style="max-height:400px;overflow-y:auto;">
             <div class="block-body-empty">Click Refresh to load schema...</div>
         </div>
@@ -21,12 +17,13 @@ export function handleSchemaLoadResult(msg: any, escapeHtml: (s: any) => string)
     if (!content) return;
 
     if (msg.error) {
-        if (status) status.innerText = 'Error: ' + msg.error;
-        content.innerHTML = '<div style="color:var(--danger);">' + escapeHtml(msg.error) + '</div>';
+        if (status) status.innerHTML = '<span style="color:var(--danger);">Error</span>';
+        content.innerHTML = '<div style="color:var(--danger);padding:8px;">' + escapeHtml(msg.error) + '</div>';
         return;
     }
 
-    if (status) status.innerText = 'Loaded ' + (msg.tables?.length || 0) + ' tables in ' + msg.elapsedMs.toFixed(1) + 'ms';
+    const safeElapsedMs = msg.elapsedMs ?? 0;
+    if (status) status.innerText = (msg.tables?.length || 0) + ' tables · ' + safeElapsedMs.toFixed(1) + 'ms';
 
     const tables = msg.tables || [];
     if (tables.length === 0) {
@@ -47,7 +44,7 @@ export function handleSchemaLoadResult(msg: any, escapeHtml: (s: any) => string)
                 <tbody>`;
         t.columns.forEach((c: any) => {
             html += `<tr style="border-bottom:1px solid var(--bg-surface-inset);">
-                <td style="padding:4px 8px;">${c.isPrimaryKey ? '🔑 ' : ''}${escapeHtml(c.name)}</td>
+                <td style="padding:4px 8px;">${c.isPrimaryKey ? '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:2px;"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg> ' : ''}${escapeHtml(c.name)}</td>
                 <td style="padding:4px 8px;font-family:var(--font-mono, monospace);color:var(--primary);">${escapeHtml(c.dataType)}</td>
                 <td style="padding:4px 8px;">${c.isNullable ? 'YES' : 'NO'}</td>
             </tr>`;
