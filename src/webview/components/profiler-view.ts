@@ -27,6 +27,8 @@ export const NumericViewStrategy: ProfileViewStrategy = {
             html += '<table class="sqlnb-table" style="width:100%;">';
             html += `<tr><td style="color:#6b7280;font-weight:600;width:40%;">Null %</td><td style="color:${nulls > 0 ? '#991b1b' : 'inherit'}">${nullPct} <span style="color:#888;font-size:11px">(${nulls.toLocaleString()})</span></td></tr>`;
             html += `<tr><td style="color:#6b7280;font-weight:600;">Distinct</td><td>${distinct.toLocaleString()}</td></tr>`;
+            const count = Number(row[col + '__count'] || 0);
+            html += `<tr><td style="color:#6b7280;font-weight:600;">Count</td><td>${count.toLocaleString()}</td></tr>`;
             html += `<tr><td style="color:#6b7280;font-weight:600;">Min</td><td>${fmtNum(row[col + '__min'])}</td></tr>`;
             html += `<tr><td style="color:#6b7280;font-weight:600;">Max</td><td>${fmtNum(row[col + '__max'])}</td></tr>`;
             html += `<tr><td style="color:#6b7280;font-weight:600;">Mean</td><td>${fmtNum(row[col + '__mean'])}</td></tr>`;

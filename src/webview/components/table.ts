@@ -235,7 +235,12 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
                 const rect = btn.getBoundingClientRect();
                 menu.style.display = 'block';
                 menu.style.top = `${rect.bottom + 4}px`;
-                menu.style.left = `${rect.left}px`;
+                const menuWidth = menu.offsetWidth || 160;
+                if (rect.left + menuWidth > window.innerWidth) {
+                    menu.style.left = `${rect.right - menuWidth}px`;
+                } else {
+                    menu.style.left = `${rect.left}px`;
+                }
             }
         });
     });
@@ -267,7 +272,12 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
                 const rect = btn.getBoundingClientRect();
                 popup.style.display = 'block';
                 popup.style.top = `${rect.bottom + 4}px`;
-                popup.style.left = `${rect.left}px`;
+                const popupWidth = popup.offsetWidth || 280;
+                if (rect.left + popupWidth > window.innerWidth) {
+                    popup.style.left = `${rect.right - popupWidth}px`;
+                } else {
+                    popup.style.left = `${rect.left}px`;
+                }
                 const content = popup.querySelector('.sqlnb-profile-content');
                 content.innerHTML = '<div style="color:#666;font-style:italic;">Profiling...</div>';
                 const inferredTypes = defaultProfilerViewBuilder.inferTypes(msg.rows, [col]);

@@ -11,6 +11,7 @@ export const NumericProfileStrategy: ProfileQueryStrategy = {
         const numExpr = driverType === 'duckdb' ? `TRY_CAST(${qCol} AS DOUBLE)` : numExprPg;
         
         const selects = [
+            `COUNT(${numExpr}) AS "${col}__count"`,
             `MIN(${numExpr}) AS "${col}__min"`,
             `MAX(${numExpr}) AS "${col}__max"`,
             `AVG(${numExpr}) AS "${col}__mean"`,
