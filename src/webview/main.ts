@@ -10,6 +10,7 @@ import { renderAdvancedTableHtml, setupAdvancedTableListeners } from './componen
 import { defaultProfilerViewBuilder } from './components/profiler-view';
 import { renderWiki } from './components/wiki';
 import { initCustomSelects, initCustomAutocompletes } from './components/dropdown';
+import { SPINNER_SVG, processingHtml, formatElapsed, unwrapCustomSelect } from './components/ui-utils';
 
 interface Cell {
   type: string;
@@ -111,8 +112,9 @@ function buildInsertDivider(pos: number): string {
 
 
 
+
 function updateRunButtonStates() {
-  const actions = ['runSql', 'chartRun', 'summaryRun', 'schemaRun'];
+  const actions = ['runSql', 'chartRun', 'chartRefresh', 'summaryRun', 'schemaRun'];
   actions.forEach(action => {
     document.querySelectorAll(`button[data-action="${action}"]`).forEach((btn: any) => {
       btn.disabled = !isConnected;
@@ -376,13 +378,7 @@ function renderCells() {
           // Remove old custom containers for these selects
           ['chart-x-', 'chart-y-', 'chart-color-'].forEach(prefix => {
             const sel = document.getElementById(prefix + idx) as HTMLSelectElement;
-            if (sel && sel.parentElement?.classList.contains('custom-select-container')) {
-              const container = sel.parentElement;
-              container.parentNode?.insertBefore(sel, container);
-              container.remove();
-              sel.style.display = '';
-              sel.removeAttribute('data-initialized');
-            }
+            unwrapCustomSelect(sel);
           });
           setTimeout(() => initCustomSelects(), 10);
         });
@@ -500,6 +496,8 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).schemaLoad = (idx: number) => {
+  const status = document.getElementById('schema-status-' + idx);
+  if (status) status.innerHTML = processingHtml('Loading schema...');
   vscode.postMessage({ type: 'schema-load', cellIndex: idx });
 };
 
@@ -509,6 +507,9 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   const colorCol = (document.getElementById(`chart-color-${idx}`) as HTMLSelectElement)?.value;
   const aggFn = (document.getElementById(`chart-agg-${idx}`) as HTMLSelectElement)?.value;
   const dsKey = (document.getElementById(`chart-ds-${idx}`) as HTMLSelectElement)?.value || 'table_0';
+  
+  const status = document.getElementById('chart-status-' + idx);
+  if (status) status.innerHTML = processingHtml('Rendering chart...');
   
   vscode.postMessage({
     type: 'chart-aggregate',
@@ -532,7 +533,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   
   const dsKey = (document.getElementById(`chart-ds-${idx}`) as HTMLSelectElement)?.value || 'table_0';
   const status = document.getElementById('chart-status-' + idx);
-  if (status) status.innerHTML = '<span style="color:var(--warning)">Refreshing source data...</span>';
+  if (status) status.innerHTML = processingHtml('Refreshing source data...');
   
   // Find the SQL cell that matches this dataset key
   const sqlIdx = cells.findIndex((c, i) => c.type === 'sql' && (c.name || `table_${i}`) === dsKey);
@@ -556,14 +557,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
         tableKeys.forEach(k => {
           dsOptions += `<option value="${escapeHtml(k)}" ${k === currentDs ? 'selected' : ''}>${escapeHtml(k)}</option>`;
         });
-        // Unwrap from custom select if needed
-        if (dsSelect.parentElement?.classList.contains('custom-select-container')) {
-          const container = dsSelect.parentElement;
-          container.parentNode?.insertBefore(dsSelect, container);
-          container.remove();
-          dsSelect.style.display = '';
-          dsSelect.removeAttribute('data-initialized');
-        }
+        unwrapCustomSelect(dsSelect);
         dsSelect.innerHTML = dsOptions;
         setTimeout(() => initCustomSelects(), 10);
       }
@@ -573,26 +567,14 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
         const sel = document.getElementById(prefix + idx) as HTMLSelectElement;
         if (sel) {
           const prev = sel.value;
-          if (sel.parentElement?.classList.contains('custom-select-container')) {
-            const container = sel.parentElement;
-            container.parentNode?.insertBefore(sel, container);
-            container.remove();
-            sel.style.display = '';
-            sel.removeAttribute('data-initialized');
-          }
+          unwrapCustomSelect(sel);
           sel.innerHTML = newCols.map(c => `<option value="${escapeHtml(c)}" ${c === prev ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
         }
       });
       const colorSel = document.getElementById('chart-color-' + idx) as HTMLSelectElement;
       if (colorSel) {
         const prev = colorSel.value;
-        if (colorSel.parentElement?.classList.contains('custom-select-container')) {
-          const container = colorSel.parentElement;
-          container.parentNode?.insertBefore(colorSel, container);
-          container.remove();
-          colorSel.style.display = '';
-          colorSel.removeAttribute('data-initialized');
-        }
+        unwrapCustomSelect(colorSel);
         colorSel.innerHTML = '<option value="">(None)</option>' + newCols.map(c => `<option value="${escapeHtml(c)}" ${c === prev ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
       }
       setTimeout(() => initCustomSelects(), 20);
@@ -606,6 +588,9 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 
 (window as any).summaryRun = (idx: number) => {
   const dsKey = (document.getElementById(`summary-ds-${idx}`) as HTMLSelectElement)?.value || 'table_0';
+  
+  const status = document.getElementById('summary-status-' + idx);
+  if (status) status.innerHTML = processingHtml('Profiling data...');
   
   vscode.postMessage({
     type: 'summary-aggregate',
@@ -670,7 +655,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   const selectedText = getSelectedText(editor);
   const queryToRun = selectedText || cell.content;
 
-  cell._output = '<div class="output-area"><div class="output-meta"><svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px; margin-right:6px"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Running... <button class="btn-action" style="margin-left:auto;color:var(--danger);" data-action="cancelSql"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Cancel</button></div></div>';
+  cell._output = '<div class="output-area"><div class="output-meta">' + SPINNER_SVG + ' Running... <button class="btn-action" style="margin-left:auto;color:var(--danger);" data-action="cancelSql"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Cancel</button></div></div>';
   const outputEl = document.getElementById('output-' + idx);
   if (outputEl) outputEl.innerHTML = cell._output;
   vscode.postMessage({ type: 'execute-sql', cellIndex: idx, cellName: cellName, query: queryToRun });
@@ -705,7 +690,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
         </button>
       </div>
       <div id="table-preview-content" style="flex: 1; overflow: auto; padding: 12px;">
-         <svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Loading...
+         ${SPINNER_SVG} Loading...
       </div>
     `;
     document.body.appendChild(popup);
@@ -713,7 +698,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
     const titleEl = document.getElementById('table-preview-title');
     if (titleEl) titleEl.textContent = 'Preview: ' + tableName;
     const contentEl = document.getElementById('table-preview-content');
-    if (contentEl) contentEl.innerHTML = '<svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Loading...';
+    if (contentEl) contentEl.innerHTML = SPINNER_SVG + ' Loading...';
     popup.style.display = 'flex';
   }
   
@@ -822,7 +807,7 @@ window.addEventListener('message', event => {
     if (idx == null || !cells[idx]) return;
 
     let outputHtml = '<div class="output-area">';
-    const ms = msg.elapsedMs ? (msg.elapsedMs < 1000 ? Math.round(msg.elapsedMs)+'ms' : (msg.elapsedMs/1000).toFixed(2)+'s') : '';
+    const ms = msg.elapsedMs ? formatElapsed(msg.elapsedMs) : '';
 
     if (msg.error) {
       outputHtml += '<div class="output-meta"><span class="meta-tag tag-err">ERROR</span> ' + ms + '</div><div class="output-error">' + escapeHtml(msg.error) + '</div>';
@@ -872,18 +857,24 @@ window.addEventListener('message', event => {
   if (msg.type === 'schema-load-result') {
     const cell = cells[msg.cellIndex];
     if (cell) cell._schemaData = msg;
+    const schemaStatus = document.getElementById('schema-status-' + msg.cellIndex);
+    if (schemaStatus) schemaStatus.innerHTML = '';
     handleSchemaLoadResult(msg, escapeHtml);
   }
 
   if (msg.type === 'chart-aggregate-result') {
     const cell = cells[msg.chartIndex];
     if (cell) cell._chartData = msg;
+    const chartStatus = document.getElementById('chart-status-' + msg.chartIndex);
+    if (chartStatus) chartStatus.innerHTML = '';
     handleChartAggregateResult(msg, escapeHtml);
   }
 
   if (msg.type === 'summary-aggregate-result') {
     const cell = cells[msg.summaryIndex];
     if (cell) cell._summaryData = msg;
+    const summaryStatus = document.getElementById('summary-status-' + msg.summaryIndex);
+    if (summaryStatus) summaryStatus.innerHTML = '';
     handleSummaryAggregateResult(msg, escapeHtml);
   }
 

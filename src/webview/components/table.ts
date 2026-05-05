@@ -1,4 +1,5 @@
 import { defaultProfilerViewBuilder } from './profiler-view';
+import { SPINNER_SVG, formatElapsed, exportButtonsHtml } from './ui-utils';
 
 declare const window: any;
 declare const document: any;
@@ -36,8 +37,7 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
     const unpinnedHeaders = originalHeaders.filter((h: string) => !pinned.includes(h));
     const headers = [...pinnedHeaders, ...unpinnedHeaders];
 
-    const safeElapsedMs = elapsedMs ?? 0;
-    const elapsed = safeElapsedMs < 1000 ? `${safeElapsedMs.toFixed(1)}ms` : `${(safeElapsedMs / 1000).toFixed(2)}s`;
+    const elapsed = formatElapsed(elapsedMs);
 
     let allPopups = '';
 
@@ -98,9 +98,14 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
     }).join('');
 
     const rowCount = msg.rows ? msg.rows.length : 0;
-    let summaryMsg = `${rowCount} rows`;
-    if (hasMore) {
-        summaryMsg = `${rowCount}+ rows (truncated)`;
+    const totalRowCount = msg.totalRowCount;
+    let summaryMsg: string;
+    if (hasMore && totalRowCount != null) {
+        summaryMsg = `${rowCount.toLocaleString()} / ${totalRowCount.toLocaleString()} rows`;
+    } else if (hasMore) {
+        summaryMsg = `${rowCount.toLocaleString()}+ rows (truncated)`;
+    } else {
+        summaryMsg = `${rowCount.toLocaleString()} rows`;
     }
 
     // Build body rows with row numbers
@@ -171,14 +176,7 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>
             <span class="sqlnb-agg-item" style="color:#888;">${elapsed}</span>
-            <span style="margin-left:auto;display:flex;gap:6px;">
-                <button class="sqlnb-export-btn" data-export-type="csv" data-export-idx="${idx}" title="Export to CSV">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>CSV
-                </button>
-                <button class="sqlnb-export-btn" data-export-type="excel" data-export-idx="${idx}" title="Export to Excel (.xlsx)">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Excel
-                </button>
-            </span>
+            ${exportButtonsHtml(idx)}
         </div>
         ${allPopups}
     </div>`;
@@ -267,6 +265,11 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
             const dir = item.getAttribute('data-sort-dir');
             if (!col || !dir) return;
             closeAllSortMenus();
+            // Show sorting indicator on the summary bar
+            const aggBar = root.querySelector('.sqlnb-agg-bar') as HTMLElement;
+            if (aggBar) {
+                aggBar.innerHTML = SPINNER_SVG + ' <span style="color:var(--text-muted)">Sorting by ' + col + ' ' + dir + '...</span>';
+            }
             window.vscode.postMessage({ type: 'execute-sort', cellIndex: idx, query: msg.command, column: col, direction: dir });
         });
     });
@@ -294,7 +297,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
                     popup.style.left = `${rect.left}px`;
                 }
                 const content = popup.querySelector('.sqlnb-profile-content');
-                content.innerHTML = '<div style="color:#666;font-style:italic;">Profiling...</div>';
+                content.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:#666;font-style:italic;">' + SPINNER_SVG + ' Profiling column...</div>';
                 const inferredTypes = defaultProfilerViewBuilder.inferTypes(msg.rows, [col]);
                 window.vscode.postMessage({ type: 'profile-column', cellIndex: idx, query: msg.command, column: col, columnType: inferredTypes[col] || 'string' });
             }
@@ -338,18 +341,9 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
         const aggBar = root.querySelector('.sqlnb-agg-bar') as HTMLElement;
         if (!aggBar) return;
 
-        const rowCount = msg.rows ? msg.rows.length : 0;
-        const safeMs = msg.elapsedMs ?? 0;
-        const elapsed = safeMs < 1000 ? `${safeMs.toFixed(1)}ms` : `${(safeMs / 1000).toFixed(2)}s`;
-        const exportBtns = `
-            <span style="margin-left:auto;display:flex;gap:6px;">
-                <button class="sqlnb-export-btn" data-export-type="csv" data-export-idx="${idx}" title="Export to CSV">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>CSV
-                </button>
-                <button class="sqlnb-export-btn" data-export-type="excel" data-export-idx="${idx}" title="Export to Excel (.xlsx)">
-                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/></svg>Excel
-                </button>
-            </span>`;
+        const rowCount = rows.length;
+        const elapsed = formatElapsed(msg.elapsedMs);
+        const exportBtns = exportButtonsHtml(idx);
         const defaultInfo = `
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>

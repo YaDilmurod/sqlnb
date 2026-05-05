@@ -414,6 +414,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
     error?: string;
     hasMore?: boolean;
     maxRows?: number;
+    totalRowCount?: number;
   }> {
     if (!session.driver || !session.driver.isConnected()) {
       return { error: 'Not connected to a database. Use the connection block to connect first.' };
@@ -445,6 +446,23 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
       }
         
       const elapsed = performance.now() - start;
+
+      // If truncated, try to get the actual total row count
+      let totalRowCount: number | undefined;
+      if (result.hasMore && isSelect && session.driver) {
+        try {
+          const cleanedQ = query.trim().replace(/;+\s*$/, '');
+          const countResult = await session.driver.executeRaw(
+            `SELECT COUNT(*) AS cnt FROM (\n${cleanedQ}\n) AS _sqlnb_count`
+          );
+          if (countResult.rows?.[0]) {
+            totalRowCount = Number(countResult.rows[0].cnt);
+          }
+        } catch {
+          // COUNT failed (e.g. query has side-effects or CTE issues) — silently skip
+        }
+      }
+
       return {
         rows: result.rows || [],
         fields: result.fields || [],
@@ -453,6 +471,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
         elapsedMs: elapsed,
         hasMore: result.hasMore || false,
         maxRows,
+        totalRowCount,
       };
     } catch (err: any) {
       const elapsed = performance.now() - start;
