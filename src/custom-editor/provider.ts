@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { IDatabaseDriver, QueryResult } from '../drivers/types';
 import { PostgresDriver } from '../drivers/postgres';
 import { DuckDbDriver } from '../drivers/duckdb';
-import { buildSchemaQuery, parseSchemaRows } from '../engines/schema-engine';
+import { buildSchemaQuery, parseSchemaRows, buildAutoCompleteQuery, parseAutoCompleteRows } from '../engines/schema-engine';
 import { buildAggregationQuery } from '../engines/chart-engine';
 import { buildSummaryQuery } from '../engines/summary-engine';
 
@@ -131,6 +131,10 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             }
           }
           webviewPanel.webview.postMessage({ type: 'connect-result', ...result });
+          // Silently fetch schema metadata for autocomplete in background
+          if (result.success) {
+            this.sendAutoCompleteMetadata(session, webviewPanel);
+          }
           break;
         }
         case 'disconnect': {
@@ -153,6 +157,11 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             session.lastResult = result.rows;
           }
           webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result, command: msg.query });
+          // Auto-refresh autocomplete metadata after DDL statements
+          const ddlPattern = /^\s*(CREATE|ALTER|DROP|TRUNCATE)\b/i;
+          if (ddlPattern.test(msg.query) && !result.error) {
+            this.sendAutoCompleteMetadata(session, webviewPanel);
+          }
           break;
         }
         case 'execute-sort': {
@@ -476,6 +485,19 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
     } catch (err: any) {
       const elapsed = performance.now() - start;
       return { error: err instanceof Error ? err.message : String(err), elapsedMs: elapsed };
+    }
+  }
+
+  /** Silently fetch schema metadata and send to webview for autocomplete. */
+  private async sendAutoCompleteMetadata(session: DocumentSession, panel: vscode.WebviewPanel): Promise<void> {
+    if (!session.driver || !session.driver.isConnected()) return;
+    try {
+      const query = buildAutoCompleteQuery(session.driverType as 'postgres' | 'duckdb');
+      const result = await session.driver.executeRaw(query);
+      const tables = parseAutoCompleteRows(result.rows || []);
+      panel.webview.postMessage({ type: 'schema-metadata', tables });
+    } catch {
+      // Autocomplete is best-effort — never block the user
     }
   }
 

@@ -152,3 +152,40 @@ export function parseSchemaRows(rows: Record<string, any>[]): SchemaTable[] {
 
   return Array.from(tableMap.values());
 }
+
+// ---------------------------------------------------------------------------
+// Lightweight autocomplete metadata (tables + columns only, no PK/size info)
+// ---------------------------------------------------------------------------
+
+export interface AutoCompleteTable {
+  schema: string;
+  name: string;
+  columns: { name: string; type: string }[];
+}
+
+export function buildAutoCompleteQuery(driverType: 'postgres' | 'duckdb' = 'postgres'): string {
+  const excludedSchemas = driverType === 'duckdb'
+    ? `('pg_catalog', 'information_schema', 'temp')`
+    : `('pg_catalog', 'information_schema')`;
+
+  return `SELECT table_schema, table_name, column_name, data_type
+FROM information_schema.columns
+WHERE table_schema NOT IN ${excludedSchemas}
+ORDER BY table_schema, table_name, ordinal_position`;
+}
+
+export function parseAutoCompleteRows(rows: Record<string, any>[]): AutoCompleteTable[] {
+  const map = new Map<string, AutoCompleteTable>();
+  for (const row of rows) {
+    const schema = String(row.table_schema || 'public');
+    const table = String(row.table_name || '');
+    const col = String(row.column_name || '');
+    if (!table || !col) continue;
+    const key = `${schema}.${table}`;
+    if (!map.has(key)) {
+      map.set(key, { schema, name: table, columns: [] });
+    }
+    map.get(key)!.columns.push({ name: col, type: String(row.data_type || 'unknown') });
+  }
+  return Array.from(map.values());
+}

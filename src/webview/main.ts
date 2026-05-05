@@ -862,6 +862,10 @@ window.addEventListener('message', event => {
     handleSchemaLoadResult(msg, escapeHtml);
   }
 
+  if (msg.type === 'schema-metadata') {
+    (window as any)._sqlnbSchema = msg.tables || [];
+  }
+
   if (msg.type === 'chart-aggregate-result') {
     const cell = cells[msg.chartIndex];
     if (cell) cell._chartData = msg;
