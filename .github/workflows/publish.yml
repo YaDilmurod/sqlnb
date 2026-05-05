@@ -38,4 +38,7 @@ jobs:
         run: npm run compile
 
       - name: Publish to Open VSX
-        run: npx ovsx publish --target ${{ matrix.target }} -p ${{ secrets.OVSX_PAT }}
+        shell: bash
+        run: |
+          sleep $((RANDOM % 5 + 1))
+          npx ovsx publish --target ${{ matrix.target }} -p ${{ secrets.OVSX_PAT }}
