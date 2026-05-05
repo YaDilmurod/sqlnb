@@ -86,3 +86,12 @@ export function initMonacoEditor(
 
     return editor;
 }
+
+/** Return the selected text in the given Monaco editor, or null if nothing is selected. */
+export function getSelectedText(editor: any): string | null {
+    if (!editor) return null;
+    const selection = editor.getSelection();
+    if (!selection || selection.isEmpty()) return null;
+    const text = editor.getModel()?.getValueInRange(selection)?.trim();
+    return text || null;
+}

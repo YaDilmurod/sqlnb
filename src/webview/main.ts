@@ -4,7 +4,7 @@ const vscode = acquireVsCodeApi();
 
 import { renderSchemaBlock, handleSchemaLoadResult } from './components/schema';
 import { renderChartBlock, handleChartAggregateResult } from './components/chart';
-import { loadMonaco, initMonacoEditor } from './components/monaco';
+import { loadMonaco, initMonacoEditor, getSelectedText } from './components/monaco';
 import { renderSummaryBlock, handleSummaryAggregateResult } from './components/summary';
 import { renderAdvancedTableHtml, setupAdvancedTableListeners } from './components/table';
 import { defaultProfilerViewBuilder } from './components/profiler-view';
@@ -581,10 +581,15 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   }
   const cellName = cell.name || `table_${idx}`;
 
+  // Use selected text if available, otherwise run the full cell content
+  const editor = monacoEditors.get(idx);
+  const selectedText = getSelectedText(editor);
+  const queryToRun = selectedText || cell.content;
+
   cell._output = '<div class="output-area"><div class="output-meta"><svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px; margin-right:6px"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Running... <button class="btn-action" style="margin-left:auto;color:var(--danger);" data-action="cancelSql"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Cancel</button></div></div>';
   const outputEl = document.getElementById('output-' + idx);
   if (outputEl) outputEl.innerHTML = cell._output;
-  vscode.postMessage({ type: 'execute-sql', cellIndex: idx, cellName: cellName, query: cell.content });
+  vscode.postMessage({ type: 'execute-sql', cellIndex: idx, cellName: cellName, query: queryToRun });
 };
 
 (window as any).cancelSql = () => {
