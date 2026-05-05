@@ -33,7 +33,8 @@ export function initMonacoEditor(
     initialValue: string, 
     language: string, 
     onChange: (val: string) => void,
-    onRun: () => void
+    onRun: () => void,
+    onPreview?: (tableName: string) => void
 ) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -72,6 +73,35 @@ export function initMonacoEditor(
     // Handle Ctrl+Enter to run
     editor.addCommand(window.monaco.KeyMod.CtrlCmd | window.monaco.KeyCode.Enter, () => {
         onRun();
+    });
+
+    // Handle Cmd/Ctrl + Click for table preview
+    editor.onMouseDown((e: any) => {
+        if (e.event.metaKey || e.event.ctrlKey) {
+            if (e.target.type === window.monaco.editor.MouseTargetType.CONTENT_TEXT) {
+                const model = editor.getModel();
+                const pos = e.target.position;
+                if (!model || !pos) return;
+
+                const lineContent = model.getLineContent(pos.lineNumber);
+                const colIdx = pos.column - 1; // 0-indexed
+
+                // Regex matches SQL identifiers: table, schema.table, "My Schema"."My Table", etc.
+                const regex = /(?:"[^"]+"|[\w_$]+)(?:\.(?:"[^"]+"|[\w_$]+))*/g;
+                let match;
+                while ((match = regex.exec(lineContent)) !== null) {
+                    const start = match.index;
+                    const end = start + match[0].length;
+                    // Check if the click was within this identifier
+                    if (colIdx >= start && colIdx <= end) {
+                        if (onPreview) {
+                            onPreview(match[0]);
+                        }
+                        break;
+                    }
+                }
+            }
+        }
     });
 
     // Auto-resize logic

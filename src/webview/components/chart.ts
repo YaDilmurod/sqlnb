@@ -1,6 +1,8 @@
 declare const window: any;
 declare const document: any;
 
+import * as echarts from 'echarts';
+
 
 
 export function renderChartBlock(idx: number, content: string, escapeHtml: (s: any) => string, columnCache: Record<string, string[]> = {}): string {
@@ -13,6 +15,8 @@ export function renderChartBlock(idx: number, content: string, escapeHtml: (s: a
     const y = escapeHtml(state.y || '');
     const color = escapeHtml(state.color || '');
     const agg = state.agg || 'sum';
+    const sortBy = state.sortBy || 'default';
+    const sortOrder = state.sortOrder || 'asc';
 
     // Build source table dropdown from columnCache keys
     const tableKeys = Object.keys(columnCache);
@@ -82,6 +86,25 @@ export function renderChartBlock(idx: number, content: string, escapeHtml: (s: a
                 <option value="max" ${agg === 'max' ? 'selected' : ''}>Max</option>
             </select>
             </div>
+
+            <div style="border-top:1px solid var(--border-color);margin:4px 0 12px 0;"></div>
+
+            <div class="block-field">
+                <label class="block-label">Sort By</label>
+                <select id="chart-sort-by-${idx}" class="sqlnb-select">
+                    <option value="default" ${sortBy === 'default' ? 'selected' : ''}>Default</option>
+                    <option value="x" ${sortBy === 'x' ? 'selected' : ''}>X Axis</option>
+                    <option value="y" ${sortBy === 'y' ? 'selected' : ''}>Y Axis</option>
+                </select>
+            </div>
+
+            <div class="block-field">
+                <label class="block-label">Sort Order</label>
+                <select id="chart-sort-order-${idx}" class="sqlnb-select">
+                    <option value="asc" ${sortOrder === 'asc' ? 'selected' : ''}>Ascending</option>
+                    <option value="desc" ${sortOrder === 'desc' ? 'selected' : ''}>Descending</option>
+                </select>
+            </div>
         </div>
         <div style="flex:1;min-height:400px;border:1px solid var(--border-color);border-radius:0 6px 6px 0;position:relative;background:var(--bg-surface);">
             <div id="chart-canvas-${idx}" style="position:absolute;top:12px;left:12px;right:12px;bottom:12px;">
@@ -105,13 +128,11 @@ export function handleChartAggregateResult(msg: any, escapeHtml: (s: any) => str
     const chartDom = document.getElementById('chart-canvas-' + idx);
     if (!chartDom) return;
 
-    if (typeof window.echarts === 'undefined') {
-        const script = document.createElement('script');
-        script.src = 'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js';
-        script.onload = () => buildChart(idx, msg.rows, chartDom);
-        document.head.appendChild(script);
-    } else {
+    try {
         buildChart(idx, msg.rows, chartDom);
+    } catch (err: any) {
+        if (status) status.innerHTML = '<span style="color:var(--danger)">Chart render error: ' + escapeHtml(err.message || err) + '</span>';
+        console.error('Chart render error:', err);
     }
 }
 
@@ -133,7 +154,7 @@ function buildChart(idx: number, rows: any[], chartDom: HTMLElement) {
         }
     }
     if (!myChart) {
-        myChart = window.echarts.init(chartDom);
+        myChart = echarts.init(chartDom);
         window._echartsInstance[idx] = myChart;
         // Use a single global resize handler instead of per-chart
         if (!window._echartsResizeHandler) {
@@ -151,6 +172,8 @@ function buildChart(idx: number, rows: any[], chartDom: HTMLElement) {
     const colorCol = (document.getElementById('chart-color-' + idx) as HTMLSelectElement)?.value || '';
     const aggFn = (document.getElementById('chart-agg-' + idx) as HTMLSelectElement)?.value || 'none';
     const type = (document.getElementById('chart-type-' + idx) as HTMLSelectElement)?.value || 'bar';
+    const sortBy = (document.getElementById('chart-sort-by-' + idx) as HTMLSelectElement)?.value || 'default';
+    const sortOrder = (document.getElementById('chart-sort-order-' + idx) as HTMLSelectElement)?.value || 'asc';
 
     // Format labels
     const labelSet: Record<string, boolean> = {};
@@ -186,6 +209,33 @@ function buildChart(idx: number, rows: any[], chartDom: HTMLElement) {
             return match ? (Number(match[yKey]) || 0) : 0;
         });
         series.push({ name: yCol, data: vals });
+    }
+
+    // Apply sorting
+    if (sortBy !== 'default' && labelOrder.length > 0) {
+        const indices = labelOrder.map((_, i) => i);
+        if (sortBy === 'x') {
+            indices.sort((a, b) => {
+                const va = labelOrder[a];
+                const vb = labelOrder[b];
+                const na = Number(va), nb = Number(vb);
+                const cmp = (!isNaN(na) && !isNaN(nb)) ? na - nb : va.localeCompare(vb);
+                return sortOrder === 'desc' ? -cmp : cmp;
+            });
+        } else if (sortBy === 'y' && series.length > 0) {
+            const firstData = series[0].data;
+            indices.sort((a, b) => {
+                const cmp = (firstData[a] || 0) - (firstData[b] || 0);
+                return sortOrder === 'desc' ? -cmp : cmp;
+            });
+        }
+        const sortedLabels = indices.map(i => labelOrder[i]);
+        labelOrder.length = 0;
+        labelOrder.push(...sortedLabels);
+        series.forEach(s => {
+            const sortedData = indices.map(i => s.data[i]);
+            s.data = sortedData;
+        });
     }
 
     const valFormatter = (value: any) => {

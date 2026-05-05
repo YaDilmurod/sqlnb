@@ -34,6 +34,7 @@ export const NumericProfileStrategy: ProfileQueryStrategy = {
 export const DateProfileStrategy: ProfileQueryStrategy = {
     type: 'date',
     getSelects: (col, qCol) => [
+        `COUNT(${qCol}) AS "${col}__count"`,
         `MIN(${qCol}) AS "${col}__min"`,
         `MAX(${qCol}) AS "${col}__max"`
     ]
@@ -41,7 +42,9 @@ export const DateProfileStrategy: ProfileQueryStrategy = {
 
 export const StringProfileStrategy: ProfileQueryStrategy = {
     type: 'string',
-    getSelects: () => [],
+    getSelects: (col, qCol) => [
+        `COUNT(${qCol}) AS "${col}__count"`
+    ],
     getCTEs: (col, qCol, cteAlias) => {
         return {
             cte: `${cteAlias} AS (\n  SELECT ${qCol} AS val, COUNT(*) AS freq\n  FROM _sqlnb_base\n  WHERE ${qCol} IS NOT NULL\n  GROUP BY ${qCol}\n  ORDER BY freq DESC, val ASC\n  LIMIT 1\n)`,

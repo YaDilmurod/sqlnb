@@ -235,6 +235,7 @@ function renderCells() {
       toolbar += '<button class="btn-action btn-run" data-action="schemaRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
     }
     if (cell.type === 'chart') {
+      toolbar += '<button class="btn-action btn-run" data-action="chartRefresh" data-idx="' + idx + '"' + disabledAttr + ' title="Re-run source SQL and refresh chart data"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
       toolbar += '<button class="btn-action btn-run" data-action="chartRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Render</button>';
     }
     if (cell.type === 'summary') {
@@ -309,6 +310,9 @@ function renderCells() {
           },
           () => {
             (window as any).runSql(idx);
+          },
+          (tableName) => {
+            (window as any).previewTable(tableName);
           }
         );
         if (editor) monacoEditors.set(idx, editor);
@@ -383,7 +387,7 @@ function renderCells() {
           setTimeout(() => initCustomSelects(), 10);
         });
       }
-      ['chart-ds-', 'chart-type-', 'chart-x-', 'chart-y-', 'chart-color-', 'chart-agg-'].forEach(prefix => {
+      ['chart-ds-', 'chart-type-', 'chart-x-', 'chart-y-', 'chart-color-', 'chart-agg-', 'chart-sort-by-', 'chart-sort-order-'].forEach(prefix => {
         const el = document.getElementById(prefix + idx) as HTMLSelectElement;
         if (el) el.addEventListener('change', () => {
             cells[idx].content = JSON.stringify({
@@ -392,7 +396,9 @@ function renderCells() {
                 x: (document.getElementById(`chart-x-${idx}`) as HTMLSelectElement)?.value,
                 y: (document.getElementById(`chart-y-${idx}`) as HTMLSelectElement)?.value,
                 color: (document.getElementById(`chart-color-${idx}`) as HTMLSelectElement)?.value,
-                agg: (document.getElementById(`chart-agg-${idx}`) as HTMLSelectElement)?.value
+                agg: (document.getElementById(`chart-agg-${idx}`) as HTMLSelectElement)?.value,
+                sortBy: (document.getElementById(`chart-sort-by-${idx}`) as HTMLSelectElement)?.value,
+                sortOrder: (document.getElementById(`chart-sort-order-${idx}`) as HTMLSelectElement)?.value
             });
             save();
         });
@@ -520,6 +526,84 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   }
 };
 
+(window as any).chartRefresh = (idx: number) => {
+  const cell = cells[idx];
+  if (!cell) return;
+  
+  const dsKey = (document.getElementById(`chart-ds-${idx}`) as HTMLSelectElement)?.value || 'table_0';
+  const status = document.getElementById('chart-status-' + idx);
+  if (status) status.innerHTML = '<span style="color:var(--warning)">Refreshing source data...</span>';
+  
+  // Find the SQL cell that matches this dataset key
+  const sqlIdx = cells.findIndex((c, i) => c.type === 'sql' && (c.name || `table_${i}`) === dsKey);
+  if (sqlIdx < 0) {
+    if (status) status.innerHTML = '<span style="color:var(--danger)">Source table "' + escapeHtml(dsKey) + '" not found</span>';
+    return;
+  }
+  
+  // Re-run the SQL cell — the sql-result handler will update columnCache,
+  // then we set up a one-time listener to auto-render the chart
+  const onRefreshResult = (event: any) => {
+    const msg = event.data;
+    if (msg.type === 'sql-result' && msg.cellIndex === sqlIdx) {
+      window.removeEventListener('message', onRefreshResult);
+      // Update source table dropdown options from latest columnCache
+      const dsSelect = document.getElementById(`chart-ds-${idx}`) as HTMLSelectElement;
+      if (dsSelect) {
+        const currentDs = dsSelect.value;
+        const tableKeys = Object.keys(columnCache);
+        let dsOptions = '';
+        tableKeys.forEach(k => {
+          dsOptions += `<option value="${escapeHtml(k)}" ${k === currentDs ? 'selected' : ''}>${escapeHtml(k)}</option>`;
+        });
+        // Unwrap from custom select if needed
+        if (dsSelect.parentElement?.classList.contains('custom-select-container')) {
+          const container = dsSelect.parentElement;
+          container.parentNode?.insertBefore(dsSelect, container);
+          container.remove();
+          dsSelect.style.display = '';
+          dsSelect.removeAttribute('data-initialized');
+        }
+        dsSelect.innerHTML = dsOptions;
+        setTimeout(() => initCustomSelects(), 10);
+      }
+      // Also update X/Y/Color dropdowns with refreshed columns
+      const newCols = columnCache[dsKey] || [];
+      ['chart-x-', 'chart-y-'].forEach(prefix => {
+        const sel = document.getElementById(prefix + idx) as HTMLSelectElement;
+        if (sel) {
+          const prev = sel.value;
+          if (sel.parentElement?.classList.contains('custom-select-container')) {
+            const container = sel.parentElement;
+            container.parentNode?.insertBefore(sel, container);
+            container.remove();
+            sel.style.display = '';
+            sel.removeAttribute('data-initialized');
+          }
+          sel.innerHTML = newCols.map(c => `<option value="${escapeHtml(c)}" ${c === prev ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+        }
+      });
+      const colorSel = document.getElementById('chart-color-' + idx) as HTMLSelectElement;
+      if (colorSel) {
+        const prev = colorSel.value;
+        if (colorSel.parentElement?.classList.contains('custom-select-container')) {
+          const container = colorSel.parentElement;
+          container.parentNode?.insertBefore(colorSel, container);
+          container.remove();
+          colorSel.style.display = '';
+          colorSel.removeAttribute('data-initialized');
+        }
+        colorSel.innerHTML = '<option value="">(None)</option>' + newCols.map(c => `<option value="${escapeHtml(c)}" ${c === prev ? 'selected' : ''}>${escapeHtml(c)}</option>`).join('');
+      }
+      setTimeout(() => initCustomSelects(), 20);
+      // Auto-render chart with updated data
+      setTimeout(() => (window as any).chartRun(idx), 50);
+    }
+  };
+  window.addEventListener('message', onRefreshResult);
+  (window as any).runSql(sqlIdx);
+};
+
 (window as any).summaryRun = (idx: number) => {
   const dsKey = (document.getElementById(`summary-ds-${idx}`) as HTMLSelectElement)?.value || 'table_0';
   
@@ -594,6 +678,46 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 
 (window as any).cancelSql = () => {
   vscode.postMessage({ type: 'cancel-query' });
+};
+
+(window as any).previewTable = (tableName: string) => {
+  let popup = document.getElementById('table-preview-popup');
+  if (!popup) {
+    popup = document.createElement('div');
+    popup.id = 'table-preview-popup';
+    popup.style.position = 'fixed';
+    popup.style.top = '10%';
+    popup.style.left = '10%';
+    popup.style.width = '80%';
+    popup.style.height = '80%';
+    popup.style.backgroundColor = 'var(--bg-surface)';
+    popup.style.border = '1px solid var(--border-color)';
+    popup.style.boxShadow = 'var(--shadow-md)';
+    popup.style.borderRadius = 'var(--border-radius-md)';
+    popup.style.zIndex = '9999';
+    popup.style.display = 'flex';
+    popup.style.flexDirection = 'column';
+    popup.innerHTML = `
+      <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface-inset); border-top-left-radius: var(--border-radius-md); border-top-right-radius: var(--border-radius-md);">
+        <h3 style="margin: 0; font-size: 15px; color: var(--text-main);" id="table-preview-title">Preview: ${escapeHtml(tableName)}</h3>
+        <button class="btn-action" onclick="document.getElementById('table-preview-popup').style.display='none'">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div id="table-preview-content" style="flex: 1; overflow: auto; padding: 12px;">
+         <svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Loading...
+      </div>
+    `;
+    document.body.appendChild(popup);
+  } else {
+    const titleEl = document.getElementById('table-preview-title');
+    if (titleEl) titleEl.textContent = 'Preview: ' + tableName;
+    const contentEl = document.getElementById('table-preview-content');
+    if (contentEl) contentEl.innerHTML = '<svg class="spin" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M12 6v6l4 2"></path></svg> Loading...';
+    popup.style.display = 'flex';
+  }
+  
+  vscode.postMessage({ type: 'preview-table', tableName: tableName });
 };
 
 (window as any).editMarkdown = (idx: number) => {
@@ -722,6 +846,29 @@ window.addEventListener('message', event => {
     }
   }
 
+  if (msg.type === 'preview-table-result') {
+    console.log("preview-table-result received", msg);
+    const content = document.getElementById('table-preview-content');
+    if (content) {
+      if (msg.error) {
+        content.innerHTML = '<span style="color:var(--danger)">' + escapeHtml(msg.error) + '</span>';
+      } else {
+        try {
+          const tempIdx = 99999;
+          let outputHtml = '<div class="output-area" style="height:100%; border:none;">';
+          outputHtml += renderAdvancedTableHtml(tempIdx, msg, escapeHtml);
+          outputHtml += '</div>';
+          content.innerHTML = outputHtml;
+          setTimeout(() => setupAdvancedTableListeners(tempIdx, msg, escapeHtml), 0);
+        } catch (e: any) {
+          content.innerHTML = '<span style="color:var(--danger)">Error rendering table: ' + escapeHtml(e.message) + '</span>';
+        }
+      }
+    } else {
+      console.error("table-preview-content element not found!");
+    }
+  }
+
   if (msg.type === 'schema-load-result') {
     const cell = cells[msg.cellIndex];
     if (cell) cell._schemaData = msg;
@@ -788,6 +935,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'moveCellDown') (window as any).moveCell(idx, 1);
   else if (action === 'summaryRun') { if (!isConnected) return; (window as any).summaryRun(idx); }
   else if (action === 'chartRun') { if (!isConnected) return; (window as any).chartRun(idx); }
+  else if (action === 'chartRefresh') { if (!isConnected) return; (window as any).chartRefresh(idx); }
   else if (action === 'schemaRun') { if (!isConnected) return; (window as any).schemaLoad(idx); }
   else if (action === 'toggleWiki') {
     let popup = document.getElementById('global-wiki-popup');

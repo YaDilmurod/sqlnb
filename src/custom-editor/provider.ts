@@ -203,6 +203,16 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           }
           break;
         }
+        case 'preview-table': {
+          if (!session.driver || !session.driver.isConnected()) {
+            webviewPanel.webview.postMessage({ type: 'preview-table-result', tableName: msg.tableName, error: 'Not connected' });
+            break;
+          }
+          const q = `SELECT * FROM ${msg.tableName} LIMIT 200`;
+          const result = await this.executeQuery(session, q);
+          webviewPanel.webview.postMessage({ type: 'preview-table-result', tableName: msg.tableName, error: result.error, fields: result.fields || [], rows: result.rows || [], elapsedMs: result.elapsedMs });
+          break;
+        }
         case 'chart-aggregate': {
           const stored = session.resultStore.get(msg.datasetKey);
           if (!stored) {
@@ -446,7 +456,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
       };
     } catch (err: any) {
       const elapsed = performance.now() - start;
-      return { error: err.message, elapsedMs: elapsed };
+      return { error: err instanceof Error ? err.message : String(err), elapsedMs: elapsed };
     }
   }
 

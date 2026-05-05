@@ -42,7 +42,7 @@ export function buildAggregationQuery(
     if (colorCol) selectCols.push(colorCol);
     const uniqueCols = [...new Set(selectCols)];
     const quotedCols = uniqueCols.map(c => safeQuote(c)).join(', ');
-    return `SELECT ${quotedCols} FROM (\n${cleanOriginal}\n) AS _sqlnb_chart LIMIT 5000`;
+    return `SELECT ${quotedCols} FROM (\n${cleanOriginal}\n) AS _sqlnb_chart LIMIT 200`;
   }
 
   const yExpressions = allYCols.map((col, idx) => {
@@ -61,5 +61,5 @@ export function buildAggregationQuery(
     }
   });
 
-  return `SELECT ${groupByClause}, ${yExpressions.join(', ')} FROM (\n${cleanOriginal}\n) AS _sqlnb_chart GROUP BY ${groupByClause}`;
+  return `SELECT ${groupByClause}, ${yExpressions.join(', ')} FROM (\n${cleanOriginal}\n) AS _sqlnb_chart GROUP BY ${groupByClause} LIMIT 200`;
 }
