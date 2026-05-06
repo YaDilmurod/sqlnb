@@ -112,24 +112,15 @@ body {
 }
 
 .cell-badge {
-  font-size: 11px;
-  font-weight: 700;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 4px 10px;
-  border-radius: var(--border-radius-sm);
   margin-right: auto;
   display: inline-flex;
   align-items: center;
-  line-height: 1;
 }
-
-.badge-sql { background: var(--primary-light); color: var(--primary); }
-.badge-md { background: var(--success-light); color: var(--success); }
-.badge-conn { background: var(--warning-light); color: var(--warning); }
-.badge-schema { background: var(--primary-light); color: var(--vscode-textLink-foreground, #4f46e5); }
-.badge-chart { background: var(--vscode-diffEditor-removedTextBackground, #fce7f3); color: var(--vscode-charts-pink, #db2777); }
-.badge-summary { background: var(--success-light); color: var(--vscode-terminal-ansiGreen, #166534); }
 
 /* ── Shared Component Content Layout ── */
 /* Note: inner block-toolbars were removed in the layout unification.

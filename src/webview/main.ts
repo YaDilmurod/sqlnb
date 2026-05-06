@@ -120,6 +120,13 @@ function updateRunButtonStates() {
       btn.disabled = !isConnected;
     });
   });
+
+  const runAllBtn = document.getElementById('btn-run-all') as HTMLButtonElement;
+  if (runAllBtn) {
+    runAllBtn.disabled = !isConnected;
+    runAllBtn.style.opacity = isConnected ? '1' : '0.5';
+    runAllBtn.style.cursor = isConnected ? 'pointer' : 'not-allowed';
+  }
 }
 
 function updateConnectionCellUI() {
@@ -168,7 +175,16 @@ function renderApp() {
     `<button class="btn-add" data-action="addCell" data-type="${t}">+ ${CELL_TYPES[t].label}</button>`
   ).join('');
 
-  app.innerHTML = `<div class="cells-container" id="cells"></div><div class="add-cell-bar">${addButtons}</div>`;
+  app.innerHTML = `
+    <div class="notebook-toolbar" style="padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface); display: flex; align-items: center;">
+      <button class="btn-primary" id="btn-run-all" onclick="window.runAllSql()" disabled style="opacity: 0.5; cursor: not-allowed; display: flex; align-items: center; gap: 4px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
+        Run All
+      </button>
+    </div>
+    <div class="cells-container" id="cells"></div>
+    <div class="add-cell-bar">${addButtons}</div>
+  `;
 
   renderCells();
 }
@@ -659,6 +675,37 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   const outputEl = document.getElementById('output-' + idx);
   if (outputEl) outputEl.innerHTML = cell._output;
   vscode.postMessage({ type: 'execute-sql', cellIndex: idx, cellName: cellName, query: queryToRun });
+};
+
+(window as any).runAllSql = async () => {
+  const sqlCells = cells.map((c, i) => ({ cell: c, idx: i })).filter(x => x.cell.type === 'sql');
+  if (sqlCells.length === 0) return;
+  
+  // Disable the run all button while running
+  const runAllBtn = document.getElementById('btn-run-all') as HTMLButtonElement;
+  if (runAllBtn) {
+    runAllBtn.disabled = true;
+    runAllBtn.innerHTML = SPINNER_SVG + ' Running All...';
+  }
+
+  for (const { idx } of sqlCells) {
+    await new Promise<void>(resolve => {
+      const onResult = (event: MessageEvent) => {
+        if (event.data.type === 'sql-result' && event.data.cellIndex === idx) {
+          window.removeEventListener('message', onResult);
+          resolve();
+        }
+      };
+      window.addEventListener('message', onResult);
+      (window as any).runSql(idx);
+    });
+  }
+
+  // Restore button state
+  if (runAllBtn) {
+    runAllBtn.disabled = !isConnected;
+    runAllBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Run All';
+  }
 };
 
 (window as any).cancelSql = () => {
