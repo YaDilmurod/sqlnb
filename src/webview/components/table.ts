@@ -1,5 +1,5 @@
 import { defaultProfilerViewBuilder } from './profiler-view';
-import { SPINNER_SVG, formatElapsed, exportButtonsHtml } from './ui-utils';
+import { SPINNER_SVG, formatElapsed, exportButtonsHtml, formatNumber } from './ui-utils';
 
 declare const window: any;
 declare const document: any;
@@ -54,7 +54,7 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
             : '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:text-bottom;"><path d="M12 17v5"/><path d="M9 10.76a2 2 0 0 1-1.11 1.79l-1.78.9A2 2 0 0 0 5 15.24V17h14v-1.76a2 2 0 0 0-1.11-1.79l-1.78-.9A2 2 0 0 1 15 10.68V6a3 3 0 0 0-6 0v4.76Z"/></svg>';
         const pinTitle = isPinned ? 'Unpin column' : 'Pin column';
 
-        let stickyStyle = isPinned ? 'position:sticky;z-index:3;background:#fff;box-shadow:2px 0 4px rgba(0,0,0,0.06);' : '';
+        let stickyStyle = isPinned ? 'position:sticky;z-index:3;background:var(--bg-surface);box-shadow:2px 0 4px rgba(0,0,0,0.06);' : '';
 
         const isAsc = currentSort && currentSort.column === h && currentSort.direction === 'ASC';
         const isDesc = currentSort && currentSort.column === h && currentSort.direction === 'DESC';
@@ -73,7 +73,7 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
             </div>` : ''}
         </div>`;
 
-        const sortBtnColor = isSorted ? '#4f46e5' : 'currentColor';
+        const sortBtnColor = isSorted ? 'var(--primary)' : 'currentColor';
         const sortBtn = `<span class="sqlnb-sort-btn" data-sort-toggle="${escapeHtml(h)}" title="Sort options" style="cursor:pointer;opacity:0.3;transition:opacity .15s;margin-left:auto;flex-shrink:0;">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="${sortBtnColor}" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
         </span>`;
@@ -83,17 +83,17 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
         </span>`;
 
         allPopups += `<div class="sqlnb-profile-popup" data-profile-popup="${escapeHtml(h)}" style="display:none; position:fixed; z-index:99999; background:var(--bg-surface); border:1px solid var(--border-color); box-shadow:var(--shadow-md); border-radius:6px; min-width:280px; max-height:400px; overflow:auto;">
-            <div class="sqlnb-profile-content" style="padding:12px;font-weight:normal;color:#333;"></div>
+            <div class="sqlnb-profile-content" style="padding:12px;font-weight:normal;color:var(--text-main);"></div>
         </div>`;
 
-        return `<th data-col="${escapeHtml(h)}" style="padding:6px 12px;text-align:left;font-weight:600;border-bottom:2px solid #ddd;border-right:1px solid #e5e7eb;position:relative;${stickyStyle}">
+        return `<th data-col="${escapeHtml(h)}" style="padding:6px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--border-color);border-right:1px solid var(--border-color);position:relative;${stickyStyle}">
             <div style="display:flex;align-items:center;gap:4px;">
                 <span class="sqlnb-pin" data-pin-col="${escapeHtml(h)}" title="${pinTitle}" style="cursor:pointer;font-size:11px;opacity:0.4;transition:opacity .15s;">${pinIcon}</span>
                 <span>${escapeHtml(h)}${sortIndicator}</span>
                 ${sortBtn}
                 ${profileBtn}
             </div>
-            <div style="color:#888;font-size:10px;font-weight:400;margin-top:2px;">${dataTypeMap[h] || ''}</div>
+            <div style="color:var(--text-subtle);font-size:10px;font-weight:400;margin-top:2px;">${dataTypeMap[h] || ''}</div>
         </th>`;
     }).join('');
 
@@ -110,20 +110,21 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
 
     // Build body rows with row numbers
     const bodyRowsWithNum = rows.map((row: any, i: number) => {
-        const bg = i % 2 === 0 ? '#fff' : '#f9f9f9';
+        const bg = i % 2 === 0 ? 'var(--bg-surface)' : 'var(--bg-surface-hover)';
         const cellsHtml = headers.map((h: string) => {
             const val = row[h];
             const isPinned = pinnedHeaders.includes(h);
             let stickyStyle = isPinned ? 'position:sticky;z-index:1;box-shadow:2px 0 4px rgba(0,0,0,0.06);' : '';
             const rawVal = val === null || val === undefined ? '' : (typeof val === 'object' ? JSON.stringify(val) : String(val));
             if (val === null || val === undefined) {
-                return `<td class="sqlnb-cell" data-row="${i}" data-col="${escapeHtml(h)}" data-val="" style="padding:4px 12px;border-bottom:1px solid #ddd;border-right:1px solid #eee;color:#aaa;font-style:italic;background:${bg};${stickyStyle}">NULL</td>`;
+                return `<td class="sqlnb-cell" data-row="${i}" data-col="${escapeHtml(h)}" data-val="" style="padding:4px 12px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);color:var(--text-subtle);font-style:italic;background:${bg};${stickyStyle}">NULL</td>`;
             }
             const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
-            const display = str.length > 120 ? str.slice(0, 120) + '…' : str;
-            return `<td class="sqlnb-cell" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid #ddd;border-right:1px solid #eee;font-family:var(--vscode-editor-font-family);font-size:13px;background:${bg};${stickyStyle}" title="${escapeHtml(str)}">${escapeHtml(display)}</td>`;
+            const formatted = formatNumber(str);
+            const display = formatted.length > 120 ? formatted.slice(0, 120) + '…' : formatted;
+            return `<td class="sqlnb-cell" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);font-family:var(--font-mono);font-size:13px;background:${bg};color:var(--text-main);${stickyStyle}" title="${escapeHtml(str)}">${escapeHtml(display)}</td>`;
         }).join('');
-        return `<tr><td class="sqlnb-rownum" style="padding:4px 8px;border-bottom:1px solid #ddd;border-right:1px solid #e5e7eb;background:${bg};color:#9ca3af;font-size:11px;text-align:right;user-select:none;min-width:36px;">${i + 1}</td>${cellsHtml}</tr>`;
+        return `<tr><td class="sqlnb-rownum" style="padding:4px 8px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);background:${bg};color:var(--text-subtle);font-size:11px;text-align:right;user-select:none;min-width:36px;">${i + 1}</td>${cellsHtml}</tr>`;
     }).join('');
 
     return `
@@ -132,40 +133,40 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
       .sqlnb-table-container th:hover .sqlnb-sort-btn { opacity:1 !important; }
       .sqlnb-pin:hover { opacity:1 !important; transform:scale(1.2); }
       .sqlnb-sort-btn:hover { opacity:1 !important; }
-      .sqlnb-sort-menu { position:absolute; top:100%; left:0; z-index:50; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 4px 12px rgba(0,0,0,0.12); padding:4px 0; min-width:160px; font-weight:400; }
-      .sqlnb-sort-item { display:flex; align-items:center; gap:8px; padding:6px 12px; font-size:12px; color:#374151; cursor:pointer; transition:background .1s; white-space:nowrap; }
-      .sqlnb-sort-item:hover { background:#f3f4f6; }
-      .sqlnb-sort-item-active { background:#eef2ff; color:#4f46e5; font-weight:600; }
-      .sqlnb-sort-item-active:hover { background:#e0e7ff; }
-      .sqlnb-sort-item-reset { color:#dc2626; }
-      .sqlnb-sort-item-reset:hover { background:#fef2f2; }
-      .sqlnb-sort-divider { height:1px; background:#e5e7eb; margin:4px 0; }
+      .sqlnb-sort-menu { position:absolute; top:100%; left:0; z-index:50; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:6px; box-shadow:var(--shadow-md); padding:4px 0; min-width:160px; font-weight:400; }
+      .sqlnb-sort-item { display:flex; align-items:center; gap:8px; padding:6px 12px; font-size:12px; color:var(--text-main); cursor:pointer; transition:background .1s; white-space:nowrap; }
+      .sqlnb-sort-item:hover { background:var(--bg-surface-hover); }
+      .sqlnb-sort-item-active { background:var(--primary-light); color:var(--primary); font-weight:600; }
+      .sqlnb-sort-item-active:hover { background:var(--primary-light); }
+      .sqlnb-sort-item-reset { color:var(--danger); }
+      .sqlnb-sort-item-reset:hover { background:var(--danger-light); }
+      .sqlnb-sort-divider { height:1px; background:var(--border-color); margin:4px 0; }
       .sqlnb-cell { cursor:cell; user-select:none; transition:background .05s; }
-      .sqlnb-cell-selected { outline:2px solid #4f46e5 !important; outline-offset:-2px; background:rgba(79,70,229,0.08) !important; }
-      .sqlnb-profile-popup { position:absolute; top:100%; left:0; z-index:51; background:#fff; border:1px solid #e5e7eb; border-radius:6px; box-shadow:0 10px 25px rgba(0,0,0,0.15); padding:0; min-width:300px; font-weight:400; text-align:left; white-space:normal; cursor:default; }
+      .sqlnb-cell-selected { outline:2px solid var(--primary) !important; outline-offset:-2px; background:var(--primary-light) !important; }
+      .sqlnb-profile-popup { position:absolute; top:100%; left:0; z-index:51; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:6px; box-shadow:0 10px 25px rgba(0,0,0,0.15); padding:0; min-width:300px; font-weight:400; text-align:left; white-space:normal; cursor:default; }
       .sqlnb-profile-popup table { width:100%; font-size:12px; margin-bottom:0 !important; }
-      .sqlnb-profile-popup th { background:#f9fafb; font-weight:600; color:#4b5563; padding:4px 8px; text-transform:none; border-bottom:1px solid #e5e7eb; }
-      .sqlnb-profile-popup td { padding:4px 8px; border-bottom:1px solid #f3f4f6; color:#111827; }
+      .sqlnb-profile-popup th { background:var(--bg-surface-inset); font-weight:600; color:var(--text-muted); padding:4px 8px; text-transform:none; border-bottom:1px solid var(--border-color); }
+      .sqlnb-profile-popup td { padding:4px 8px; border-bottom:1px solid var(--border-color); color:var(--text-main); }
       .sqlnb-table-container th:hover .sqlnb-profile-btn { opacity:1 !important; }
-      .sqlnb-profile-btn:hover { opacity:1 !important; color:#4f46e5; }
-      .sqlnb-agg-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:6px 12px; font-size:12px; color:#374151; background:#f8f9fb; border-top:1px solid #e5e7eb; font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif; }
+      .sqlnb-profile-btn:hover { opacity:1 !important; color:var(--primary); }
+      .sqlnb-agg-bar { display:flex; align-items:center; gap:16px; flex-wrap:wrap; padding:6px 12px; font-size:12px; color:var(--text-main); background:var(--bg-surface-inset); border-top:1px solid var(--border-color); font-family:var(--font-sans); }
       .sqlnb-agg-item { display:flex; align-items:center; gap:4px; }
-      .sqlnb-agg-label { color:#6b7280; font-weight:600; font-size:11px; text-transform:uppercase; }
-      .sqlnb-agg-value { font-weight:600; color:#111827; font-variant-numeric:tabular-nums; }
-      .sqlnb-export-btn { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; font-size:11px; font-weight:600; color:#4b5563; background:#fff; border:1px solid #d1d5db; border-radius:4px; cursor:pointer; transition:all .15s; white-space:nowrap; }
-      .sqlnb-export-btn:hover { background:#f3f4f6; border-color:#9ca3af; color:#111827; }
+      .sqlnb-agg-label { color:var(--text-muted); font-weight:600; font-size:11px; text-transform:uppercase; }
+      .sqlnb-agg-value { font-weight:600; color:var(--text-main); font-variant-numeric:tabular-nums; }
+      .sqlnb-export-btn { display:inline-flex; align-items:center; gap:4px; padding:3px 8px; font-size:11px; font-weight:600; color:var(--text-muted); background:var(--bg-surface); border:1px solid var(--border-color); border-radius:4px; cursor:pointer; transition:all .15s; white-space:nowrap; }
+      .sqlnb-export-btn:hover { background:var(--bg-surface-hover); border-color:var(--text-subtle); color:var(--text-main); }
       .sqlnb-select-all { cursor:pointer; opacity:0.4; transition:opacity .15s; }
       .sqlnb-select-all:hover { opacity:1; }
-      .sqlnb-select-all.sqlnb-all-selected { opacity:1; color:#4f46e5; }
+      .sqlnb-select-all.sqlnb-all-selected { opacity:1; color:var(--primary); }
     </style>
-    <div id="sqlnb-advanced-table-${idx}" tabindex="0" style="font-family:-apple-system,BlinkMacSystemFont,Segoe UI,Roboto,sans-serif;color:#333;outline:none;">
-        <div style="margin-bottom:8px;font-size:12px;color:#666;">
+    <div id="sqlnb-advanced-table-${idx}" tabindex="0" style="font-family:var(--font-sans);color:var(--text-main);outline:none;">
+        <div style="margin-bottom:8px;font-size:12px;color:var(--text-muted);">
             ${summaryMsg} · ${elapsed}
         </div>
-        <div class="sqlnb-table-container" style="max-height:400px;overflow:auto;border:1px solid #ddd;border-radius:4px;box-shadow:0 1px 3px rgba(0,0,0,0.05);background:#fff;overscroll-behavior:auto;">
+        <div class="sqlnb-table-container" style="max-height:400px;overflow:auto;border:1px solid var(--border-color);border-radius:4px;box-shadow:var(--shadow-sm);background:var(--bg-surface);overscroll-behavior:auto;">
             <table style="width:100%;border-collapse:collapse;text-align:left;white-space:nowrap;">
-                <thead style="position:sticky;top:0;background:#fff;box-shadow:0 1px 0 #ddd;z-index:4;">
-                    <tr><th class="sqlnb-select-all-th" style="padding:6px 8px;border-bottom:2px solid #ddd;border-right:1px solid #e5e7eb;text-align:center;min-width:36px;" title="Select All"><span class="sqlnb-select-all"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M9 12l2 2 4-4"/></svg></span></th>${headerCells}</tr>
+                <thead style="position:sticky;top:0;background:var(--bg-surface);box-shadow:0 1px 0 var(--border-color);z-index:4;">
+                    <tr><th class="sqlnb-select-all-th" style="padding:6px 8px;border-bottom:2px solid var(--border-color);border-right:1px solid var(--border-color);text-align:center;min-width:36px;" title="Select All"><span class="sqlnb-select-all"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"/><path d="M9 12l2 2 4-4"/></svg></span></th>${headerCells}</tr>
                 </thead>
                 <tbody>
                     ${bodyRowsWithNum}
@@ -175,7 +176,7 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
         <div class="sqlnb-agg-bar">
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>
-            <span class="sqlnb-agg-item" style="color:#888;">${elapsed}</span>
+            <span class="sqlnb-agg-item" style="color:var(--text-subtle);">${elapsed}</span>
             ${exportButtonsHtml(idx)}
         </div>
         ${allPopups}
@@ -222,10 +223,12 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
             if (tableEl) {
                 const thElements = tableEl.querySelectorAll('thead th');
                 let cumulativeLeft = 0;
-                for (let i = 0; i < pinnedHeaders.length && i < thElements.length; i++) {
-                    const th = thElements[i] as any;
+                // +1 offset to skip the select-all / row-number column at index 0
+                for (let i = 0; i < pinnedHeaders.length && (i + 1) < thElements.length; i++) {
+                    const th = thElements[i + 1] as any;
                     th.style.left = cumulativeLeft + 'px';
-                    const bodyCells = tableEl.querySelectorAll(`tbody tr td:nth-child(${i + 1})`);
+                    // +2 because nth-child is 1-based AND we skip the row-number td
+                    const bodyCells = tableEl.querySelectorAll(`tbody tr td:nth-child(${i + 2})`);
                     bodyCells.forEach((td: any) => { td.style.left = cumulativeLeft + 'px'; });
                     cumulativeLeft += th.offsetWidth || 150;
                 }
@@ -297,7 +300,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
                     popup.style.left = `${rect.left}px`;
                 }
                 const content = popup.querySelector('.sqlnb-profile-content');
-                content.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:#666;font-style:italic;">' + SPINNER_SVG + ' Profiling column...</div>';
+                content.innerHTML = '<div style="display:flex;align-items:center;gap:8px;color:var(--text-muted);font-style:italic;">' + SPINNER_SVG + ' Profiling column...</div>';
                 const inferredTypes = defaultProfilerViewBuilder.inferTypes(msg.rows, [col]);
                 window.vscode.postMessage({ type: 'profile-column', cellIndex: idx, query: msg.command, column: col, columnType: inferredTypes[col] || 'string' });
             }
@@ -347,7 +350,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
         const defaultInfo = `
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>
-            <span class="sqlnb-agg-item" style="color:#888;">${elapsed}</span>${exportBtns}`;
+            <span class="sqlnb-agg-item" style="color:var(--text-subtle);">${elapsed}</span>${exportBtns}`;
 
         if (selectedCells.size === 0) {
             aggBar.innerHTML = defaultInfo;
@@ -371,7 +374,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
         });
 
         if (numericValues.length === 0) {
-            aggBar.innerHTML = `<span style="color:#888;">Selected ${selectedCells.size} cell${selectedCells.size > 1 ? 's' : ''} — no numeric values</span>${exportBtns}`;
+            aggBar.innerHTML = `<span style="color:var(--text-subtle);">Selected ${selectedCells.size} cell${selectedCells.size > 1 ? 's' : ''} — no numeric values</span>${exportBtns}`;
             aggBar.style.display = 'flex';
             return;
         }

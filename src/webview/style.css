@@ -1,37 +1,41 @@
 :root {
-  /* Light Theme Palette */
-  --bg-app: #f4f6f8;
-  --bg-surface: #ffffff;
-  --bg-surface-hover: #f9fbfc;
-  --bg-surface-inset: #f0f2f5;
-  
-  --border-color: #e2e8f0;
-  --border-focus: #3b82f6;
-  
-  --text-main: #1e293b;
-  --text-muted: #64748b;
-  --text-subtle: #94a3b8;
-  
-  --primary: #3b82f6;
-  --primary-hover: #2563eb;
-  --primary-light: #eff6ff;
-  
-  --success: #10b981;
-  --success-light: #ecfdf5;
-  
-  --danger: #ef4444;
-  --danger-light: #fef2f2;
-  
-  --warning: #f59e0b;
-  --warning-light: #fffbeb;
+  /* ── Theme-Aware Palette ──
+     Maps to VS Code's --vscode-* variables so the webview
+     adapts to the active editor theme (light / dark / HC).
+     Fallbacks preserve the original light-theme look when
+     the variables aren't available. */
+  --bg-app:            var(--vscode-editor-background, #f4f6f8);
+  --bg-surface:        var(--vscode-editorWidget-background, #ffffff);
+  --bg-surface-hover:  var(--vscode-list-hoverBackground, #f9fbfc);
+  --bg-surface-inset:  var(--vscode-editorHoverWidget-background, #f0f2f5);
+
+  --border-color:      var(--vscode-editorWidget-border, #e2e8f0);
+  --border-focus:      var(--vscode-focusBorder, #3b82f6);
+
+  --text-main:         var(--vscode-editor-foreground, #1e293b);
+  --text-muted:        var(--vscode-descriptionForeground, #64748b);
+  --text-subtle:       var(--vscode-disabledForeground, #94a3b8);
+
+  --primary:           var(--vscode-textLink-foreground, #3b82f6);
+  --primary-hover:     var(--vscode-textLink-activeForeground, #2563eb);
+  --primary-light:     var(--vscode-editor-selectionBackground, #eff6ff);
+
+  --success:           var(--vscode-terminal-ansiGreen, #10b981);
+  --success-light:     var(--vscode-diffEditor-insertedTextBackground, #ecfdf5);
+
+  --danger:            var(--vscode-errorForeground, #ef4444);
+  --danger-light:      var(--vscode-inputValidation-errorBackground, #fef2f2);
+
+  --warning:           var(--vscode-editorWarning-foreground, #f59e0b);
+  --warning-light:     var(--vscode-editorWarning-background, #fffbeb);
 
   --border-radius-sm: 6px;
   --border-radius-md: 10px;
   --border-radius-lg: 14px;
-  
-  --font-sans: 'Inter', system-ui, -apple-system, sans-serif;
-  --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
-  
+
+  --font-sans: var(--vscode-font-family, 'Inter', system-ui, -apple-system, sans-serif);
+  --font-mono: var(--vscode-editor-font-family, 'JetBrains Mono', 'Fira Code', 'Consolas', monospace);
+
   --shadow-sm: 0 1px 2px 0 rgb(0 0 0 / 0.05);
   --shadow-md: 0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1);
 }
@@ -123,9 +127,9 @@ body {
 .badge-sql { background: var(--primary-light); color: var(--primary); }
 .badge-md { background: var(--success-light); color: var(--success); }
 .badge-conn { background: var(--warning-light); color: var(--warning); }
-.badge-schema { background: #eef2ff; color: #4f46e5; }
-.badge-chart { background: #fce7f3; color: #db2777; }
-.badge-summary { background: #dcfce3; color: #166534; }
+.badge-schema { background: var(--primary-light); color: var(--vscode-textLink-foreground, #4f46e5); }
+.badge-chart { background: var(--vscode-diffEditor-removedTextBackground, #fce7f3); color: var(--vscode-charts-pink, #db2777); }
+.badge-summary { background: var(--success-light); color: var(--vscode-terminal-ansiGreen, #166534); }
 
 /* ── Shared Component Content Layout ── */
 /* Note: inner block-toolbars were removed in the layout unification.

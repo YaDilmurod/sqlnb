@@ -34,6 +34,43 @@ export function exportButtonsHtml(idx: number): string {
 }
 
 /**
+ * Format a numeric value with thin-space (\u2009) group separators for readability.
+ * Integer-like values: 1234567 → "1 234 567"
+ * Decimal values: 1234567.89 → "1 234 567.89" (up to 2 decimals)
+ * Non-numeric strings pass through unchanged.
+ */
+export function formatNumber(value: any): string {
+  if (value === null || value === undefined) return '';
+  const str = String(value);
+  // Fast path: not a number or empty
+  if (str === '' || isNaN(Number(str))) return str;
+  const num = Number(str);
+  // Very small numbers or special values — return as-is
+  if (!isFinite(num)) return str;
+
+  const isNeg = num < 0;
+  const absStr = isNeg ? str.replace(/^-/, '') : str;
+
+  let intPart: string;
+  let decPart: string | undefined;
+
+  if (absStr.includes('.')) {
+    const parts = absStr.split('.');
+    intPart = parts[0];
+    // Keep original decimal digits, but cap at 2 for display
+    const raw = parts[1];
+    decPart = raw.length > 2 ? raw.slice(0, 2) : raw;
+  } else {
+    intPart = absStr;
+  }
+
+  // Add thin-space separators to the integer part
+  const grouped = intPart.replace(/\B(?=(\d{3})+(?!\d))/g, '\u2009');
+  const result = decPart !== undefined ? `${grouped}.${decPart}` : grouped;
+  return isNeg ? `-${result}` : result;
+}
+
+/**
  * Unwrap a <select> from a custom-select-container wrapper so its
  * innerHTML can be safely replaced, then re-initialise it.
  */

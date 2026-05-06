@@ -3,7 +3,7 @@ export function renderWiki(driverType: string): string {
   const isDuck = driverType === 'duckdb';
 
   if (!isPg && !isDuck) {
-    return `<div class="sqlnb-wiki-container"><div style="padding:20px; color:#666; text-align:center;">Please connect to a database to see the Wiki.</div></div>`;
+    return `<div class="sqlnb-wiki-container"><div style="padding:20px; color:var(--text-muted); text-align:center;">Please connect to a database to see the Wiki.</div></div>`;
   }
 
   const title = isPg ? 'PostgreSQL Reference' : 'DuckDB Reference';

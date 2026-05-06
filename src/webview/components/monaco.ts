@@ -47,7 +47,7 @@ export function initMonacoEditor(
     const wrapper = document.createElement('div');
     wrapper.style.width = '100%';
     wrapper.style.height = '150px'; // Initial height
-    wrapper.style.border = '1px solid #ddd';
+    wrapper.style.border = '1px solid var(--border-color)';
     wrapper.style.borderRadius = '4px';
     wrapper.style.overflow = 'hidden';
     container.appendChild(wrapper);
@@ -55,7 +55,7 @@ export function initMonacoEditor(
     const editor = window.monaco.editor.create(wrapper, {
         value: initialValue,
         language: language,
-        theme: 'vs', // Light theme
+        theme: document.body.classList.contains('vscode-dark') || document.body.classList.contains('vscode-high-contrast') ? 'vs-dark' : 'vs',
         minimap: { enabled: false },
         scrollBeyondLastLine: false,
         wordWrap: 'on',
