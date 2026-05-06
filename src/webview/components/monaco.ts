@@ -62,7 +62,9 @@ export function initMonacoEditor(
         lineNumbersMinChars: 3,
         fontSize: 13,
         padding: { top: 8, bottom: 8 },
-        automaticLayout: true
+        automaticLayout: true,
+        fixedOverflowWidgets: true,
+        suggest: { maxVisibleSuggestions: 10 }
     });
 
     // Handle change
