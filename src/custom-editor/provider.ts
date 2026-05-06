@@ -196,6 +196,22 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           }
           break;
         }
+        case 'overview-load': {
+          if (!session.driver || !session.driver.isConnected()) {
+            webviewPanel.webview.postMessage({ type: 'overview-load-result', cellIndex: msg.cellIndex, error: 'Not connected' });
+            break;
+          }
+          const query = buildSchemaQuery(session.driverType as 'postgres'|'duckdb');
+          const start = performance.now();
+          try {
+            const result = await session.driver.executeRaw(query);
+            const tables = parseSchemaRows(result.rows || []);
+            webviewPanel.webview.postMessage({ type: 'overview-load-result', cellIndex: msg.cellIndex, tables, elapsedMs: performance.now() - start });
+          } catch (err: any) {
+            webviewPanel.webview.postMessage({ type: 'overview-load-result', cellIndex: msg.cellIndex, error: err.message, elapsedMs: performance.now() - start });
+          }
+          break;
+        }
         case 'schema-load': {
           if (!session.driver || !session.driver.isConnected()) {
             webviewPanel.webview.postMessage({ type: 'schema-load-result', cellIndex: msg.cellIndex, error: 'Not connected' });

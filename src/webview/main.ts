@@ -6,6 +6,7 @@ import { renderSchemaBlock, handleSchemaLoadResult } from './components/schema';
 import { renderChartBlock, handleChartAggregateResult } from './components/chart';
 import { loadMonaco, initMonacoEditor, getSelectedText } from './components/monaco';
 import { renderSummaryBlock, handleSummaryAggregateResult } from './components/summary';
+import { renderOverviewBlock, handleOverviewLoadResult } from './components/overview';
 import { renderAdvancedTableHtml, setupAdvancedTableListeners } from './components/table';
 import { defaultProfilerViewBuilder } from './components/profiler-view';
 import { renderWiki } from './components/wiki';
@@ -21,7 +22,7 @@ interface Cell {
   _chartData?: any; // Chart cache
   _schemaData?: any; // Schema cache
   _summaryData?: any; // Profiler cache
-
+  _overviewData?: any; // Overview cache
 }
 
 let cells: Cell[] = [];
@@ -91,6 +92,7 @@ function renderMarkdown(md: string): string {
 // Single source of truth for all block types. Adding a new block means adding one entry here.
 const CELL_TYPES: Record<string, { label: string; badgeClass: string; needsConnection: boolean }> = {
   connection: { label: 'Connection', badgeClass: 'badge-conn',    needsConnection: false },
+  overview:   { label: 'Overview',   badgeClass: 'badge-schema',  needsConnection: true },
   sql:        { label: 'SQL',        badgeClass: 'badge-sql',     needsConnection: true },
   markdown:   { label: 'Markdown',   badgeClass: 'badge-md',      needsConnection: false },
   schema:     { label: 'Schema',     badgeClass: 'badge-schema',  needsConnection: true },
@@ -114,7 +116,7 @@ function buildInsertDivider(pos: number): string {
 
 
 function updateRunButtonStates() {
-  const actions = ['runSql', 'chartRun', 'chartRefresh', 'summaryRun', 'schemaRun'];
+  const actions = ['runSql', 'chartRun', 'chartRefresh', 'summaryRun', 'schemaRun', 'overviewRun'];
   actions.forEach(action => {
     document.querySelectorAll(`button[data-action="${action}"]`).forEach((btn: any) => {
       btn.disabled = !isConnected;
@@ -235,7 +237,9 @@ function renderCells() {
     }
 
     // Status indicator — unified location in toolbar for all types that need it
-    if (cell.type === 'schema') {
+    if (cell.type === 'overview') {
+      toolbar += '<span class="cell-status" id="overview-status-' + idx + '" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>';
+    } else if (cell.type === 'schema') {
       toolbar += '<span class="cell-status" id="schema-status-' + idx + '" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>';
     } else if (cell.type === 'chart') {
       toolbar += '<span class="cell-status" id="chart-status-' + idx + '" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>';
@@ -249,6 +253,9 @@ function renderCells() {
     if (cell.type === 'sql') {
       toolbar += '<button class="btn-action btn-run" data-action="runSql" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
       toolbar += '<button class="btn-icon" data-action="toggleWiki" data-idx="' + idx + '" title="Wiki / Examples"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></button>';
+    }
+    if (cell.type === 'overview') {
+      toolbar += '<button class="btn-action btn-run" data-action="overviewRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
     }
     if (cell.type === 'schema') {
       toolbar += '<button class="btn-action btn-run" data-action="schemaRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
@@ -295,6 +302,9 @@ function renderCells() {
     else if (cell.type === 'markdown') {
       content += '<div class="md-editor" style="display:none;" id="md-edit-' + idx + '"><textarea id="md-ta-' + idx + '" spellcheck="false">' + escapeHtml(cell.content) + '</textarea></div><div class="md-preview" id="md-preview-' + idx + '" ondblclick="editMarkdown(' + idx + ')">' + (renderMarkdown(cell.content) || '<em>Double-click to edit...</em>') + '</div>';
     } 
+    else if (cell.type === 'overview') {
+      content += renderOverviewBlock(idx, escapeHtml);
+    }
     else if (cell.type === 'schema') {
       content += renderSchemaBlock(idx, escapeHtml);
     }
@@ -435,7 +445,9 @@ function renderCells() {
     
     // Re-hydrate cached DOM states
     setTimeout(() => {
-      if (cell.type === 'chart' && cell._chartData) {
+      if (cell.type === 'overview' && cell._overviewData) {
+        handleOverviewLoadResult(cell._overviewData, escapeHtml);
+      } else if (cell.type === 'chart' && cell._chartData) {
         handleChartAggregateResult(cell._chartData, escapeHtml);
       } else if (cell.type === 'schema' && cell._schemaData) {
         handleSchemaLoadResult(cell._schemaData, escapeHtml);
@@ -510,6 +522,14 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
     outputEl.innerHTML = outputHtml;
     setTimeout(() => setupAdvancedTableListeners(idx, msg, escapeHtml), 0);
   }
+};
+
+(window as any).overviewLoad = (idx: number) => {
+  const status = document.getElementById('overview-status-' + idx);
+  if (status) status.innerHTML = processingHtml('Loading overview...');
+  const content = document.getElementById('overview-content-' + idx);
+  if (content) content.innerHTML = '<div style="padding:16px;">' + SPINNER_SVG + ' Loading database overview...</div>';
+  vscode.postMessage({ type: 'overview-load', cellIndex: idx });
 };
 
 (window as any).schemaLoad = (idx: number) => {
@@ -854,7 +874,7 @@ window.addEventListener('message', event => {
     cells = parsed.map((nc, i) => {
       const oc = cells[i];
       if (oc && oc.type === nc.type) {
-        return { ...nc, _output: oc._output, _outputData: oc._outputData, _chartData: oc._chartData, _schemaData: oc._schemaData, _summaryData: oc._summaryData };
+        return { ...nc, _output: oc._output, _outputData: oc._outputData, _chartData: oc._chartData, _schemaData: oc._schemaData, _summaryData: oc._summaryData, _overviewData: oc._overviewData };
       }
       return nc;
     });
@@ -885,6 +905,12 @@ window.addEventListener('message', event => {
                msgEl.innerHTML = '<span style="color:var(--success);">Connected to ' + escapeHtml(msg.dbName || 'db') + '</span>';
            }
        }
+    }
+    // Auto-load overview block on successful connect
+    if (msg.success) {
+      cells.forEach((c, i) => {
+        if (c.type === 'overview') (window as any).overviewLoad(i);
+      });
     }
   }
 
@@ -956,6 +982,14 @@ window.addEventListener('message', event => {
         }
       }
     }
+  }
+
+  if (msg.type === 'overview-load-result') {
+    const cell = cells[msg.cellIndex];
+    if (cell) cell._overviewData = msg;
+    const overviewStatus = document.getElementById('overview-status-' + msg.cellIndex);
+    if (overviewStatus) overviewStatus.innerHTML = '';
+    handleOverviewLoadResult(msg, escapeHtml);
   }
 
   if (msg.type === 'schema-load-result') {
@@ -1035,6 +1069,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'summaryRun') { if (!isConnected) return; (window as any).summaryRun(idx); }
   else if (action === 'chartRun') { if (!isConnected) return; (window as any).chartRun(idx); }
   else if (action === 'chartRefresh') { if (!isConnected) return; (window as any).chartRefresh(idx); }
+  else if (action === 'overviewRun') { if (!isConnected) return; (window as any).overviewLoad(idx); }
   else if (action === 'schemaRun') { if (!isConnected) return; (window as any).schemaLoad(idx); }
   else if (action === 'toggleWiki') {
     let popup = document.getElementById('global-wiki-popup');

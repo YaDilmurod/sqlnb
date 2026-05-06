@@ -79,7 +79,8 @@ export async function activate(context: vscode.ExtensionContext) {
       const initialData = {
         cells: [
           { type: 'connection', content: '' },
-          { type: 'markdown', content: '# Welcome to SQL Notebook\n\n### Getting Started\n1. Fill in your PostgreSQL connection string in the block above and click Connect.\n2. Run queries in SQL blocks below.\n3. Add Schema, Chart, or Profiler blocks from the bottom toolbar.' },
+          { type: 'overview', content: '' },
+          { type: 'markdown', content: '# Welcome to SQL Notebook\n\n### Getting Started\n1. Fill in your PostgreSQL connection string in the block above and click Connect.\n2. The Overview block will automatically show your database tables, views, and materialized views.\n3. Run queries in SQL blocks below.\n4. Add Schema, Chart, or Profiler blocks from the bottom toolbar.' },
           { type: 'sql', content: 'SELECT 1;' }
         ]
       };

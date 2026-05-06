@@ -533,3 +533,120 @@ button[disabled] {
   cursor: not-allowed !important;
   pointer-events: none !important;
 }
+
+/* ── Overview Block ── */
+.overview-root .block-body {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+.ov-section {
+  margin-bottom: 4px;
+}
+
+.ov-section-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.ov-section-header:hover {
+  background: var(--bg-surface-hover);
+}
+
+.ov-section-chevron {
+  display: flex;
+  align-items: center;
+  transition: transform 0.2s ease;
+  color: var(--text-muted);
+}
+
+.ov-section-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  letter-spacing: 0.3px;
+}
+
+.ov-section-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  padding: 1px 7px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.ov-section-body {
+  padding: 4px 12px 8px;
+}
+
+.ov-cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(170px, 1fr));
+  gap: 8px;
+}
+
+.ov-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  padding: 10px 12px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.ov-card:hover {
+  border-color: var(--primary);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
+  transform: translateY(-1px);
+}
+
+.ov-card-expanded {
+  border-color: var(--primary);
+  background: var(--bg-surface-hover);
+}
+
+.ov-card-header {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  margin-bottom: 4px;
+}
+
+.ov-card-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ov-card-schema {
+  font-size: 10px;
+  color: var(--text-subtle);
+  flex-shrink: 0;
+}
+
+.ov-card-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.ov-card-meta span {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+}
