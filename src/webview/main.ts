@@ -121,11 +121,12 @@ function updateRunButtonStates() {
     });
   });
 
+  // Run All is always enabled — if not connected it will connect first
   const runAllBtn = document.getElementById('btn-run-all') as HTMLButtonElement;
   if (runAllBtn) {
-    runAllBtn.disabled = !isConnected;
-    runAllBtn.style.opacity = isConnected ? '1' : '0.5';
-    runAllBtn.style.cursor = isConnected ? 'pointer' : 'not-allowed';
+    runAllBtn.disabled = false;
+    runAllBtn.style.opacity = '1';
+    runAllBtn.style.cursor = 'pointer';
   }
 }
 
@@ -177,7 +178,7 @@ function renderApp() {
 
   app.innerHTML = `
     <div class="notebook-toolbar" style="padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface); display: flex; align-items: center;">
-      <button class="btn-primary" id="btn-run-all" onclick="window.runAllSql()" disabled style="opacity: 0.5; cursor: not-allowed; display: flex; align-items: center; gap: 4px;">
+      <button class="btn-primary" id="btn-run-all" onclick="window.runAllSql()" style="display: flex; align-items: center; gap: 4px;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
         Run All
       </button>
@@ -678,14 +679,54 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).runAllSql = async () => {
-  const sqlCells = cells.map((c, i) => ({ cell: c, idx: i })).filter(x => x.cell.type === 'sql');
-  if (sqlCells.length === 0) return;
-  
-  // Disable the run all button while running
   const runAllBtn = document.getElementById('btn-run-all') as HTMLButtonElement;
   if (runAllBtn) {
     runAllBtn.disabled = true;
     runAllBtn.innerHTML = SPINNER_SVG + ' Running All...';
+  }
+
+  // If not connected, connect first using the connection cell
+  if (!isConnected) {
+    const connIdx = cells.findIndex(c => c.type === 'connection');
+    if (connIdx >= 0) {
+      const inp = document.getElementById('conn-input-' + connIdx) as HTMLInputElement;
+      if (!inp || !inp.value.trim()) {
+        // No connection string — restore button and bail
+        if (runAllBtn) {
+          runAllBtn.disabled = false;
+          runAllBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Run All';
+        }
+        return;
+      }
+      // Wait for the connection result
+      await new Promise<void>(resolve => {
+        const onConnect = (event: MessageEvent) => {
+          if (event.data.type === 'connect-result') {
+            window.removeEventListener('message', onConnect);
+            resolve();
+          }
+        };
+        window.addEventListener('message', onConnect);
+        (window as any).connectDb(connIdx);
+      });
+      // If still not connected after attempt, bail
+      if (!isConnected) {
+        if (runAllBtn) {
+          runAllBtn.disabled = false;
+          runAllBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Run All';
+        }
+        return;
+      }
+    }
+  }
+
+  const sqlCells = cells.map((c, i) => ({ cell: c, idx: i })).filter(x => x.cell.type === 'sql');
+  if (sqlCells.length === 0) {
+    if (runAllBtn) {
+      runAllBtn.disabled = false;
+      runAllBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Run All';
+    }
+    return;
   }
 
   for (const { idx } of sqlCells) {
@@ -703,7 +744,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 
   // Restore button state
   if (runAllBtn) {
-    runAllBtn.disabled = !isConnected;
+    runAllBtn.disabled = false;
     runAllBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg> Run All';
   }
 };
@@ -712,7 +753,30 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   vscode.postMessage({ type: 'cancel-query' });
 };
 
+// Stored preview data so pin-toggle can re-render the preview table
+let _previewTableData: any = null;
+const PREVIEW_TABLE_IDX = 99999;
+
+/** Re-render the preview table inside the modal (used by pin toggle). */
+(window as any).rerenderPreviewTable = () => {
+  if (!_previewTableData) return;
+  const content = document.getElementById('table-preview-content');
+  if (!content) return;
+  const msg = _previewTableData;
+  let outputHtml = '<div class="output-area" style="height:100%; border:none;">';
+  outputHtml += renderAdvancedTableHtml(PREVIEW_TABLE_IDX, msg, escapeHtml);
+  outputHtml += '</div>';
+  content.innerHTML = outputHtml;
+  // Override table container max-height for modal (fills available space)
+  const tc = content.querySelector('.sqlnb-table-container') as HTMLElement;
+  if (tc) tc.style.maxHeight = 'none';
+  setTimeout(() => setupAdvancedTableListeners(PREVIEW_TABLE_IDX, msg, escapeHtml), 0);
+};
+
 (window as any).previewTable = (tableName: string) => {
+  // Clear old preview data + pinned columns for the preview index
+  _previewTableData = null;
+
   let popup = document.getElementById('table-preview-popup');
   if (!popup) {
     popup = document.createElement('div');
@@ -879,25 +943,18 @@ window.addEventListener('message', event => {
   }
 
   if (msg.type === 'preview-table-result') {
-    console.log("preview-table-result received", msg);
     const content = document.getElementById('table-preview-content');
     if (content) {
       if (msg.error) {
         content.innerHTML = '<span style="color:var(--danger)">' + escapeHtml(msg.error) + '</span>';
       } else {
         try {
-          const tempIdx = 99999;
-          let outputHtml = '<div class="output-area" style="height:100%; border:none;">';
-          outputHtml += renderAdvancedTableHtml(tempIdx, msg, escapeHtml);
-          outputHtml += '</div>';
-          content.innerHTML = outputHtml;
-          setTimeout(() => setupAdvancedTableListeners(tempIdx, msg, escapeHtml), 0);
+          _previewTableData = msg;
+          (window as any).rerenderPreviewTable();
         } catch (e: any) {
           content.innerHTML = '<span style="color:var(--danger)">Error rendering table: ' + escapeHtml(e.message) + '</span>';
         }
       }
-    } else {
-      console.error("table-preview-content element not found!");
     }
   }
 

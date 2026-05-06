@@ -213,7 +213,12 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
             if (pIdx >= 0) currentPinned.splice(pIdx, 1);
             else currentPinned.push(col);
             pinnedColumnsMap.set(idx, currentPinned);
-            if (window.rerenderSqlTable) window.rerenderSqlTable(idx);
+            // Use the appropriate re-render function: preview modal or regular cell
+            if (idx === 99999 && window.rerenderPreviewTable) {
+                window.rerenderPreviewTable();
+            } else if (window.rerenderSqlTable) {
+                window.rerenderSqlTable(idx);
+            }
         });
     });
 
@@ -384,7 +389,7 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
         const avg = sum / count;
         const min = Math.min(...numericValues);
         const max = Math.max(...numericValues);
-        const fmt = (v: number) => Number.isInteger(v) ? v.toLocaleString() : v.toLocaleString(undefined, { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+        const fmt = (v: number) => formatNumber(Number.isInteger(v) ? v.toString() : v.toFixed(2));
 
         aggBar.innerHTML = `
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Count:</span> <span class="sqlnb-agg-value">${count}</span></span>
