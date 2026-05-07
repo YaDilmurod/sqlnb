@@ -49,7 +49,7 @@ function parseCells(jsonText: string): Cell[] {
     const data = JSON.parse(jsonText);
     return data.cells || [];
   } catch {
-    return [{ type: 'connection', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
+    return [{ type: 'connection', content: '' }, { type: 'schema', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
   }
 }
 
@@ -906,10 +906,11 @@ window.addEventListener('message', event => {
            }
        }
     }
-    // Auto-load overview block on successful connect
+    // Auto-load overview and schema blocks on successful connect
     if (msg.success) {
       cells.forEach((c, i) => {
         if (c.type === 'overview') (window as any).overviewLoad(i);
+        if (c.type === 'schema') (window as any).schemaLoad(i);
       });
     }
   }
