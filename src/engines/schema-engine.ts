@@ -64,9 +64,7 @@ ORDER BY c.table_schema, c.table_name, c.ordinal_position`;
   c.character_maximum_length,
   c.numeric_precision,
   CASE WHEN pk.column_name IS NOT NULL THEN true ELSE false END AS is_primary_key,
-  CASE WHEN t.table_type = 'BASE TABLE' THEN
-    pg_total_relation_size(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))
-  ELSE 0 END AS table_size_bytes
+  pg_total_relation_size(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name)) AS table_size_bytes
 FROM information_schema.columns c
 JOIN information_schema.tables t
   ON c.table_name = t.table_name AND c.table_schema = t.table_schema

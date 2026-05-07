@@ -650,3 +650,227 @@ button[disabled] {
   align-items: center;
   gap: 2px;
 }
+
+/* ── Schema Block (Tree Layout) ── */
+.schema-root .block-body {
+  max-height: 500px;
+  overflow-y: auto;
+}
+
+/* Shared chevron rotation for all levels */
+.sch-chevron-open {
+  transform: rotate(90deg);
+}
+
+/* ── Schema level (top) ── */
+.sch-schema-section {
+  margin-bottom: 2px;
+}
+
+.sch-schema-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.sch-schema-header:hover {
+  background: var(--bg-surface-hover);
+}
+
+.sch-schema-chevron {
+  display: flex;
+  align-items: center;
+  transition: transform 0.2s ease;
+  color: var(--text-muted);
+}
+
+.sch-schema-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+}
+
+.sch-schema-count {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+.sch-schema-size {
+  font-size: 11px;
+  color: var(--text-subtle);
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+
+.sch-schema-body {
+  padding-left: 16px;
+}
+
+/* ── Type level (Tables / Views / Mat Views) ── */
+.sch-type-section {
+  margin-bottom: 1px;
+}
+
+.sch-type-header {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 12px;
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.sch-type-header:hover {
+  background: var(--bg-surface-hover);
+}
+
+.sch-type-chevron {
+  display: flex;
+  align-items: center;
+  transition: transform 0.2s ease;
+  color: var(--text-muted);
+}
+
+.sch-type-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  letter-spacing: 0.3px;
+}
+
+.sch-type-count {
+  font-size: 11px;
+  font-weight: 700;
+  color: white;
+  padding: 1px 7px;
+  border-radius: 10px;
+  min-width: 20px;
+  text-align: center;
+}
+
+.sch-type-size {
+  font-size: 11px;
+  color: var(--text-subtle);
+  margin-left: auto;
+  font-family: var(--font-mono);
+}
+
+.sch-type-body {
+  padding-left: 16px;
+}
+
+/* ── Table item level ── */
+.sch-table-item {
+  border-radius: var(--border-radius-sm);
+  margin-bottom: 1px;
+  transition: background 0.12s ease;
+}
+
+.sch-table-expanded {
+  background: var(--bg-surface-hover);
+}
+
+.sch-table-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 10px;
+  cursor: pointer;
+  border-radius: var(--border-radius-sm);
+  transition: background 0.12s ease;
+  user-select: none;
+}
+
+.sch-table-header:hover {
+  background: var(--bg-surface-inset);
+}
+
+.sch-table-chevron {
+  display: flex;
+  align-items: center;
+  transition: transform 0.2s ease;
+  color: var(--text-subtle);
+  flex-shrink: 0;
+}
+
+.sch-table-name {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-main);
+  font-family: var(--font-mono);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sch-table-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-left: auto;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.sch-preview-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  opacity: 0;
+}
+
+.sch-table-header:hover .sch-preview-btn {
+  opacity: 1;
+}
+
+.sch-preview-btn:hover {
+  color: var(--primary);
+  background: var(--primary-light);
+  border-color: var(--primary);
+}
+
+/* ── Column rows ── */
+.sch-table-columns {
+  padding: 4px 10px 8px 28px;
+}
+
+.sch-col-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.sch-col-name {
+  color: var(--text-main);
+}
+
+.sch-col-type {
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+}
+
+.sch-col-null {
+  color: var(--text-subtle);
+  font-size: 9px;
+  margin-left: auto;
+}
+
