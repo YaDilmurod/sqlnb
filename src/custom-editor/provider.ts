@@ -588,11 +588,18 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
       if (!err.position && errorMessage) {
         // DuckDB often includes: LINE N: <text>\n ^  or  Error: ... (line:N:col:M)
         const lineMatch = errorMessage.match(/LINE\s+(\d+):/i);
-        if (lineMatch) errorDetails.line = Number(lineMatch[1]);
+        let prefixLength = 0;
+        if (lineMatch) {
+          errorDetails.line = Number(lineMatch[1]);
+          // Include the space after the colon in the prefix length
+          prefixLength = lineMatch[0].length + 1; 
+        }
         
         // Try to extract position marker from caret (^) indicator
         const caretMatch = errorMessage.match(/\n(\s*)\^/);
-        if (caretMatch) errorDetails.caretOffset = caretMatch[1].length;
+        if (caretMatch) {
+          errorDetails.caretOffset = Math.max(0, caretMatch[1].length - prefixLength);
+        }
       }
       
       return { 

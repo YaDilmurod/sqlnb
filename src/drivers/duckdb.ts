@@ -105,32 +105,44 @@ export class DuckDbDriver implements IDatabaseDriver {
     if (!this._db) throw new Error('DuckDB not connected');
     query = this._rewriteCsvPaths(query);
 
-    // Strip trailing semicolons before wrapping in subquery
-    const cleanQuery = query.trim().replace(/;+$/, '');
+    // Strip trailing semicolons before wrapping in subquery (do NOT trim to preserve leading empty lines/comments for correct error line reporting)
+    const cleanQuery = query.replace(/;+\s*$/, '');
     // DuckDB doesn't have cursors like Postgres — use LIMIT for memory safety
     const limitedQuery = `SELECT * FROM (\n${cleanQuery}\n) AS _sqlnb_limited LIMIT ${maxRows + 1}`;
-    const rawRows: Record<string, any>[] = await this._db.all(limitedQuery);
-    const rows = sanitizeRows(rawRows);
+    
+    try {
+      const rawRows: Record<string, any>[] = await this._db.all(limitedQuery);
+      const rows = sanitizeRows(rawRows);
 
-    let hasMore = false;
-    let resultRows = rows;
-    if (rows.length > maxRows) {
-      hasMore = true;
-      resultRows = rows.slice(0, maxRows);
+      let hasMore = false;
+      let resultRows = rows;
+      if (rows.length > maxRows) {
+        hasMore = true;
+        resultRows = rows.slice(0, maxRows);
+      }
+
+      // Extract field names from first row (DuckDB doesn't return field metadata like pg)
+      const fields = resultRows.length > 0
+        ? Object.keys(resultRows[0]).map(name => ({ name }))
+        : [];
+
+      return {
+        rows: resultRows,
+        fields,
+        rowCount: resultRows.length,
+        command: 'SELECT',
+        hasMore,
+      };
+    } catch (err: any) {
+      if (err.message && err.message.includes('LINE')) {
+        // Because we prepend "SELECT * FROM (\n", all lines are shifted by 1.
+        err.message = err.message.replace(/LINE\s+(\d+)/i, (match: string, p1: string) => {
+          const adjustedLine = Math.max(1, Number(p1) - 1);
+          return `LINE ${adjustedLine}`;
+        });
+      }
+      throw err;
     }
-
-    // Extract field names from first row (DuckDB doesn't return field metadata like pg)
-    const fields = resultRows.length > 0
-      ? Object.keys(resultRows[0]).map(name => ({ name }))
-      : [];
-
-    return {
-      rows: resultRows,
-      fields,
-      rowCount: resultRows.length,
-      command: 'SELECT',
-      hasMore,
-    };
   }
 
   async executeStatement(query: string): Promise<QueryResult> {

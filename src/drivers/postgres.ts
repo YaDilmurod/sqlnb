@@ -92,7 +92,8 @@ export class PostgresDriver implements IDatabaseDriver {
     try {
       pid = await this._trackPid(client);
       await client.query('BEGIN');
-      await client.query(`DECLARE _sqlnb_cursor NO SCROLL CURSOR FOR ${query}`);
+      const prefix = 'DECLARE _sqlnb_cursor NO SCROLL CURSOR FOR ';
+      await client.query(`${prefix}${query}`);
       const result = await client.query(`FETCH ${maxRows + 1} FROM _sqlnb_cursor`);
       await client.query('CLOSE _sqlnb_cursor');
       await client.query('COMMIT');
@@ -112,6 +113,11 @@ export class PostgresDriver implements IDatabaseDriver {
         hasMore,
       };
     } catch (err: any) {
+      if (err.position) {
+        // Adjust position to account for the DECLARE cursor wrapper (length 43)
+        const offset = 43;
+        err.position = String(Math.max(1, Number(err.position) - offset));
+      }
       try { await client.query('ROLLBACK'); } catch { }
       throw err;
     } finally {
