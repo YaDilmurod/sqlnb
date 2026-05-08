@@ -575,7 +575,13 @@ function inferSelectColumns(selectBody: string): { name: string; type: string }[
         const simpleMatch = trimmed.match(/^(?:[\w]+\.)?(\w+)$/);
         if (simpleMatch) { columns.push({ name: simpleMatch[1], type: 'unknown' }); continue; }
 
-        // Expression without AS — skip (name is ambiguous)
+        // Implicit alias on expression: count(*) cnt, a + b total
+        const implicitAliasMatch = trimmed.match(/\s(\w+)\s*$/);
+        if (implicitAliasMatch && !SQL_RESERVED.has(implicitAliasMatch[1].toLowerCase())) {
+            columns.push({ name: implicitAliasMatch[1], type: 'unknown' }); continue;
+        }
+
+        // Expression without AS or alias — skip (name is ambiguous)
     }
 
     return columns;
