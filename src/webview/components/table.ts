@@ -691,6 +691,39 @@ function setupFilterBarListeners(root: HTMLElement, idx: number, msg: any, escap
         e.stopPropagation();
     });
 
+    // Handle paste explicitly — VS Code webviews intercept Cmd/Ctrl+V
+    // at a higher level, so the default paste may not reach the input.
+    filterInput.addEventListener('paste', (e: ClipboardEvent) => {
+        e.stopPropagation();
+    });
+
+    // Also intercept Cmd/Ctrl+V in keydown as a fallback — VS Code may
+    // swallow the keystroke before a native paste event fires.
+    filterInput.addEventListener('keydown', (e: KeyboardEvent) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'v') {
+            e.stopPropagation();
+            // Let the native paste happen if possible; additionally
+            // use the Clipboard API as a safety net.
+            navigator.clipboard.readText().then(text => {
+                if (text && filterInput.value === filterInput.value) {
+                    // Only insert if the native paste didn't already do it.
+                    // We detect this by checking after a tick.
+                    const before = filterInput.value;
+                    setTimeout(() => {
+                        if (filterInput.value === before) {
+                            // Native paste didn't fire — insert manually
+                            const start = filterInput.selectionStart ?? before.length;
+                            const end = filterInput.selectionEnd ?? before.length;
+                            filterInput.value = before.slice(0, start) + text + before.slice(end);
+                            filterInput.selectionStart = filterInput.selectionEnd = start + text.length;
+                        }
+                    }, 50);
+                }
+            }).catch(() => { /* clipboard permission denied — native paste may still work */ });
+            return; // Don't stop the event — allow native paste to attempt
+        }
+    }, true); // Use capture phase to run before the other keydown handler
+
     // Prevent clicks in filter bar from clearing table selection
     const filterBar = root.querySelector('.sqlnb-filter-bar');
     if (filterBar) {
