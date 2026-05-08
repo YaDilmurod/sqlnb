@@ -1129,3 +1129,278 @@ button[disabled] {
   margin-left: auto;
 }
 
+/* ── PK / FK Badges ── */
+.sqlnb-badge-pk,
+.sqlnb-badge-fk {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 5px;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-radius: 3px;
+  line-height: 1.3;
+  flex-shrink: 0;
+  margin-left: 2px;
+}
+
+.sqlnb-badge-pk {
+  background: #fef3c7;
+  color: #92400e;
+  border: 1px solid #fcd34d;
+}
+
+.sqlnb-badge-fk {
+  background: #dbeafe;
+  color: #1e40af;
+  border: 1px solid #93c5fd;
+}
+
+/* ── FK Cell Hover Link ── */
+.sqlnb-cell-content {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sqlnb-fk-cell-link {
+  display: none;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent 70%);
+  transition: all 0.12s;
+  flex-shrink: 0;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.sqlnb-fk-cell:hover .sqlnb-fk-cell-link,
+.sqlnb-fk-cell-link:focus {
+  display: inline-flex;
+}
+
+.sqlnb-fk-cell-link:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  transform: scale(1.05);
+}
+
+/* ── FK Preview Modal ── */
+@keyframes fkModalFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes fkModalSlideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.sqlnb-fk-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  animation: fkModalFadeIn 0.2s ease;
+}
+
+.sqlnb-fk-modal-content {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 90vw;
+  max-width: 1000px;
+  max-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: fkModalSlideUp 0.25s ease;
+}
+
+.sqlnb-fk-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 20px;
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
+}
+
+.sqlnb-fk-modal-title {
+  font-weight: 600;
+  font-size: 14px;
+  color: var(--text-main);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.sqlnb-fk-modal-icon {
+  font-size: 16px;
+}
+
+.sqlnb-fk-modal-filter {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: var(--bg-surface-inset);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+}
+
+.sqlnb-fk-modal-meta {
+  margin-left: auto;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.sqlnb-fk-modal-close {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.sqlnb-fk-modal-close:hover {
+  background: var(--danger-light);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.sqlnb-fk-modal-body {
+  overflow: auto;
+  flex: 1;
+  padding: 0;
+}
+
+.sqlnb-fk-error {
+  padding: 24px;
+  color: var(--danger);
+  font-family: var(--font-mono);
+  font-size: 13px;
+}
+
+.sqlnb-fk-empty {
+  padding: 24px;
+  color: var(--text-muted);
+  font-style: italic;
+  text-align: center;
+}
+
+.sqlnb-fk-table-wrap {
+  overflow: auto;
+}
+
+.sqlnb-fk-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  white-space: nowrap;
+  font-size: 13px;
+  font-family: var(--font-mono);
+}
+
+.sqlnb-fk-table thead {
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+  box-shadow: 0 1px 0 var(--border-color);
+  z-index: 2;
+}
+
+.sqlnb-fk-table th {
+  padding: 8px 12px;
+  font-weight: 600;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  border-bottom: 2px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  color: var(--text-main);
+}
+
+.sqlnb-fk-th-content {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.sqlnb-fk-th-type {
+  font-size: 10px;
+  color: var(--text-muted);
+  font-weight: 400;
+  font-family: var(--font-mono);
+}
+
+.sqlnb-fk-table td {
+  padding: 6px 12px;
+  border-bottom: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  color: var(--text-main);
+}
+
+.sqlnb-fk-table tbody tr:nth-child(even) {
+  background: var(--bg-surface-hover);
+}
+
+.sqlnb-fk-table tbody tr:hover {
+  background: var(--primary-light);
+}
+
+.sqlnb-fk-table .null-val {
+  color: var(--text-subtle);
+  font-style: italic;
+}
+
+/* FK cell links inside the modal */
+.sqlnb-fk-modal-content .sqlnb-fk-cell {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.sqlnb-fk-modal-content .sqlnb-fk-cell-link {
+  display: none;
+  cursor: pointer;
+  font-size: 10px;
+  padding: 1px 3px;
+  border-radius: 3px;
+  background: var(--primary-light);
+  color: var(--primary);
+  border: 1px solid color-mix(in srgb, var(--primary) 30%, transparent 70%);
+  transition: all 0.12s;
+  white-space: nowrap;
+  line-height: 1;
+}
+
+.sqlnb-fk-modal-content td:hover .sqlnb-fk-cell-link {
+  display: inline-flex;
+}
+
+.sqlnb-fk-modal-content .sqlnb-fk-cell-link:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}

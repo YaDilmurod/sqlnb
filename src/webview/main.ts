@@ -8,6 +8,7 @@ import { loadMonaco, initMonacoEditor, getSelectedText } from './components/mona
 import { renderSummaryBlock, handleSummaryAggregateResult } from './components/summary';
 import { renderOverviewBlock, handleOverviewLoadResult } from './components/overview';
 import { renderAdvancedTableHtml, setupAdvancedTableListeners } from './components/table';
+import { handleFkPreviewResult, updateConstraintCache } from './components/fk-preview';
 import { defaultProfilerViewBuilder } from './components/profiler-view';
 import { renderWiki } from './components/wiki';
 import { initCustomSelects, initCustomAutocompletes } from './components/dropdown';
@@ -1194,6 +1195,18 @@ window.addEventListener('message', event => {
 
   if (msg.type === 'schema-metadata') {
     (window as any)._sqlnbSchema = msg.tables || [];
+  }
+
+  if (msg.type === 'constraint-metadata') {
+    (window as any)._sqlnbConstraints = {
+      foreignKeys: msg.foreignKeys || [],
+      primaryKeys: msg.primaryKeys || [],
+    };
+    updateConstraintCache(msg.foreignKeys || [], msg.primaryKeys || []);
+  }
+
+  if (msg.type === 'preview-fk-result') {
+    handleFkPreviewResult(msg, escapeHtml);
   }
 
   if (msg.type === 'chart-aggregate-result') {

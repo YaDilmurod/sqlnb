@@ -187,3 +187,101 @@ export function parseAutoCompleteRows(rows: Record<string, any>[]): AutoComplete
   }
   return Array.from(map.values());
 }
+
+// ---------------------------------------------------------------------------
+// PK / FK constraint metadata (OID-based for result-field matching)
+// ---------------------------------------------------------------------------
+
+export interface ForeignKeyInfo {
+  sourceTableOid: number;
+  sourceColumnId: number;
+  sourceSchema: string;
+  sourceTable: string;
+  sourceColumn: string;
+  targetTableOid: number;
+  targetColumnId: number;
+  targetSchema: string;
+  targetTable: string;
+  targetColumn: string;
+}
+
+export interface PrimaryKeyInfo {
+  tableOid: number;
+  columnId: number;
+  tableSchema: string;
+  tableName: string;
+  columnName: string;
+}
+
+export function buildConstraintQuery(driverType: 'postgres' | 'duckdb' = 'postgres'): { fkQuery: string; pkQuery: string } | null {
+  if (driverType !== 'postgres') return null; // DuckDB doesn't have FK/PK via pg_constraint
+
+  const fkQuery = `
+SELECT
+  c.oid         AS source_table_oid,
+  c.relname     AS source_table,
+  ns.nspname    AS source_schema,
+  a.attnum      AS source_column_id,
+  a.attname     AS source_column,
+  cr.oid        AS target_table_oid,
+  cr.relname    AS target_table,
+  nsr.nspname   AS target_schema,
+  ar.attnum     AS target_column_id,
+  ar.attname    AS target_column
+FROM pg_constraint con
+JOIN pg_class c ON con.conrelid = c.oid
+JOIN pg_namespace ns ON c.relnamespace = ns.oid
+JOIN pg_class cr ON con.confrelid = cr.oid
+JOIN pg_namespace nsr ON cr.relnamespace = nsr.oid
+CROSS JOIN LATERAL unnest(con.conkey, con.confkey) WITH ORDINALITY AS cols(fk_attnum, pk_attnum, ord)
+JOIN pg_attribute a  ON a.attrelid = c.oid  AND a.attnum = cols.fk_attnum
+JOIN pg_attribute ar ON ar.attrelid = cr.oid AND ar.attnum = cols.pk_attnum
+WHERE con.contype = 'f'
+  AND ns.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY ns.nspname, c.relname, a.attnum`;
+
+  const pkQuery = `
+SELECT
+  c.oid       AS table_oid,
+  c.relname   AS table_name,
+  ns.nspname  AS table_schema,
+  a.attnum    AS column_id,
+  a.attname   AS column_name
+FROM pg_constraint con
+JOIN pg_class c ON con.conrelid = c.oid
+JOIN pg_namespace ns ON c.relnamespace = ns.oid
+JOIN pg_attribute a ON a.attrelid = c.oid AND a.attnum = ANY(con.conkey)
+WHERE con.contype = 'p'
+  AND ns.nspname NOT IN ('pg_catalog', 'information_schema')
+ORDER BY ns.nspname, c.relname, a.attnum`;
+
+  return { fkQuery, pkQuery };
+}
+
+export function parseConstraintRows(
+  fkRows: Record<string, any>[],
+  pkRows: Record<string, any>[]
+): { foreignKeys: ForeignKeyInfo[]; primaryKeys: PrimaryKeyInfo[] } {
+  const foreignKeys: ForeignKeyInfo[] = fkRows.map(r => ({
+    sourceTableOid: Number(r.source_table_oid),
+    sourceColumnId: Number(r.source_column_id),
+    sourceSchema: String(r.source_schema),
+    sourceTable: String(r.source_table),
+    sourceColumn: String(r.source_column),
+    targetTableOid: Number(r.target_table_oid),
+    targetColumnId: Number(r.target_column_id),
+    targetSchema: String(r.target_schema),
+    targetTable: String(r.target_table),
+    targetColumn: String(r.target_column),
+  }));
+
+  const primaryKeys: PrimaryKeyInfo[] = pkRows.map(r => ({
+    tableOid: Number(r.table_oid),
+    columnId: Number(r.column_id),
+    tableSchema: String(r.table_schema),
+    tableName: String(r.table_name),
+    columnName: String(r.column_name),
+  }));
+
+  return { foreignKeys, primaryKeys };
+}

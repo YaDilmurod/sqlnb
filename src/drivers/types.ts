@@ -5,7 +5,7 @@
 
 export interface QueryResult {
   rows: Record<string, any>[];
-  fields: { name: string; dataTypeID?: number }[];
+  fields: { name: string; dataTypeID?: number; tableID?: number; columnID?: number }[];
   rowCount: number;
   command: string;
   hasMore: boolean;

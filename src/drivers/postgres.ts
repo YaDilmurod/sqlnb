@@ -106,7 +106,7 @@ export class PostgresDriver implements IDatabaseDriver {
 
       return {
         rows: sanitizeRows(rows),
-        fields: (result.fields || []).map((f: any) => ({ name: f.name, dataTypeID: f.dataTypeID })),
+        fields: (result.fields || []).map((f: any) => ({ name: f.name, dataTypeID: f.dataTypeID, tableID: f.tableID || 0, columnID: f.columnID || 0 })),
         rowCount: rows.length,
         command: 'SELECT',
         hasMore,
@@ -129,7 +129,7 @@ export class PostgresDriver implements IDatabaseDriver {
       const result = await client.query(query);
       return {
         rows: sanitizeRows(result.rows || []),
-        fields: (result.fields || []).map((f: any) => ({ name: f.name, dataTypeID: f.dataTypeID })),
+        fields: (result.fields || []).map((f: any) => ({ name: f.name, dataTypeID: f.dataTypeID, tableID: f.tableID || 0, columnID: f.columnID || 0 })),
         rowCount: result.rowCount ?? 0,
         command: result.command || '',
         hasMore: false,

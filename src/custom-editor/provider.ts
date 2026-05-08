@@ -2,7 +2,7 @@ import * as vscode from 'vscode';
 import { IDatabaseDriver, QueryResult } from '../drivers/types';
 import { PostgresDriver } from '../drivers/postgres';
 import { DuckDbDriver } from '../drivers/duckdb';
-import { buildSchemaQuery, parseSchemaRows, buildAutoCompleteQuery, parseAutoCompleteRows } from '../engines/schema-engine';
+import { buildSchemaQuery, parseSchemaRows, buildAutoCompleteQuery, parseAutoCompleteRows, buildConstraintQuery, parseConstraintRows } from '../engines/schema-engine';
 import { buildAggregationQuery } from '../engines/chart-engine';
 import { buildSummaryQuery } from '../engines/summary-engine';
 
@@ -131,9 +131,10 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             }
           }
           webviewPanel.webview.postMessage({ type: 'connect-result', ...result });
-          // Silently fetch schema metadata for autocomplete in background
+          // Silently fetch schema metadata for autocomplete + constraints in background
           if (result.success) {
             this.sendAutoCompleteMetadata(session, webviewPanel);
+            this.sendConstraintMetadata(session, webviewPanel);
           }
           break;
         }
@@ -321,6 +322,41 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, rows: res.rows || [], columnTypes, elapsedMs: performance.now() - start });
           } catch (err: any) {
             webviewPanel.webview.postMessage({ type: 'summary-aggregate-result', summaryIndex: msg.summaryIndex, error: err.message, elapsedMs: performance.now() - start });
+          }
+          break;
+        }
+        case 'preview-fk': {
+          if (!session.driver || !session.driver.isConnected()) {
+            webviewPanel.webview.postMessage({ type: 'preview-fk-result', error: 'Not connected' });
+            break;
+          }
+          const fkTable = msg.targetTable;
+          const fkColumn = msg.targetColumn;
+          const fkValue = msg.value;
+          const safeTable = fkTable.split('.').map((p: string) => `"${p.replace(/"/g, '""')}"`).join('.');
+          const safeCol = `"${fkColumn.replace(/"/g, '""')}"`;
+          // Escape single quotes in value for safe inline embedding
+          const safeValue = String(fkValue).replace(/'/g, "''");
+          const fkQuery = `SELECT * FROM ${safeTable} WHERE ${safeCol}::text = '${safeValue}' LIMIT 200`;
+          const fkStart = performance.now();
+          try {
+            const fkResult = await session.driver.executeSelect(fkQuery, 200);
+            webviewPanel.webview.postMessage({
+              type: 'preview-fk-result',
+              tableName: fkTable,
+              column: fkColumn,
+              value: fkValue,
+              fields: fkResult.fields,
+              rows: fkResult.rows,
+              elapsedMs: performance.now() - fkStart,
+            });
+          } catch (err: any) {
+            webviewPanel.webview.postMessage({
+              type: 'preview-fk-result',
+              error: err.message,
+              tableName: fkTable,
+              elapsedMs: performance.now() - fkStart,
+            });
           }
           break;
         }
@@ -578,6 +614,23 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
       panel.webview.postMessage({ type: 'schema-metadata', tables });
     } catch {
       // Autocomplete is best-effort — never block the user
+    }
+  }
+
+  /** Silently fetch FK/PK constraint metadata and send to webview. */
+  private async sendConstraintMetadata(session: DocumentSession, panel: vscode.WebviewPanel): Promise<void> {
+    if (!session.driver || !session.driver.isConnected()) return;
+    const queries = buildConstraintQuery(session.driverType as 'postgres' | 'duckdb');
+    if (!queries) return; // DuckDB — no constraint support
+    try {
+      const [fkResult, pkResult] = await Promise.all([
+        session.driver.executeRaw(queries.fkQuery),
+        session.driver.executeRaw(queries.pkQuery),
+      ]);
+      const constraints = parseConstraintRows(fkResult.rows || [], pkResult.rows || []);
+      panel.webview.postMessage({ type: 'constraint-metadata', ...constraints });
+    } catch {
+      // Constraint metadata is best-effort — never block the user
     }
   }
 

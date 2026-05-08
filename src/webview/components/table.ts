@@ -1,5 +1,6 @@
 import { defaultProfilerViewBuilder } from './profiler-view';
 import { SPINNER_SVG, formatElapsed, exportButtonsHtml, formatNumber } from './ui-utils';
+import { isPrimaryKey, getForeignKeyInfo, requestFkPreview } from './fk-preview';
 
 declare const window: any;
 declare const document: any;
@@ -28,9 +29,12 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
 
     const originalHeaders = fields ? fields.map((f: any) => f.name) : Object.keys(rows[0]);
     const dataTypeMap: Record<string, string> = {};
+    // Build field info map for PK/FK lookup via OIDs
+    const fieldInfoMap: Record<string, { tableID: number; columnID: number }> = {};
     if (fields) {
         for (const f of fields) {
             dataTypeMap[f.name] = oidToType(f.dataTypeID);
+            fieldInfoMap[f.name] = { tableID: f.tableID || 0, columnID: f.columnID || 0 };
         }
     }
 
@@ -88,10 +92,23 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
             <div class="sqlnb-profile-content" style="padding:12px;font-weight:normal;color:var(--text-main);"></div>
         </div>`;
 
+        // PK/FK badges based on constraint metadata
+        const fi = fieldInfoMap[h];
+        let constraintBadges = '';
+        if (fi) {
+            if (isPrimaryKey(fi.tableID, fi.columnID)) {
+                constraintBadges += '<span class="sqlnb-badge-pk" title="Primary Key">PK</span>';
+            }
+            const fkInfo = getForeignKeyInfo(fi.tableID, fi.columnID);
+            if (fkInfo) {
+                constraintBadges += `<span class="sqlnb-badge-fk" title="FK → ${escapeHtml(fkInfo.targetTable)}.${escapeHtml(fkInfo.targetColumn)}">FK</span>`;
+            }
+        }
+
         return `<th data-col="${escapeHtml(h)}" style="padding:6px 12px;text-align:left;font-weight:600;border-bottom:2px solid var(--border-color);border-right:1px solid var(--border-color);position:relative;${stickyStyle}">
             <div style="display:flex;align-items:center;gap:4px;">
                 <span class="sqlnb-pin" data-pin-col="${escapeHtml(h)}" title="${pinTitle}" style="cursor:pointer;font-size:11px;opacity:0.4;transition:opacity .15s;">${pinIcon}</span>
-                <span>${escapeHtml(h)}${sortIndicator}</span>
+                <span>${escapeHtml(h)}${sortIndicator}</span>${constraintBadges}
                 ${sortBtn}
                 ${profileBtn}
             </div>
@@ -118,13 +135,19 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
             const isPinned = pinnedHeaders.includes(h);
             let stickyStyle = isPinned ? 'position:sticky;z-index:1;box-shadow:2px 0 4px rgba(0,0,0,0.06);' : '';
             const rawVal = val === null || val === undefined ? '' : (typeof val === 'object' ? JSON.stringify(val) : String(val));
+            // FK hover icon for non-null FK cells
+            const fi = fieldInfoMap[h];
+            const cellFk = fi ? getForeignKeyInfo(fi.tableID, fi.columnID) : null;
             if (val === null || val === undefined) {
                 return `<td class="sqlnb-cell" data-row="${i}" data-col="${escapeHtml(h)}" data-val="" style="padding:4px 12px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);color:var(--text-subtle);font-style:italic;background:${bg};${stickyStyle}">NULL</td>`;
             }
             const str = typeof val === 'object' ? JSON.stringify(val) : String(val);
             const formatted = formatNumber(str);
             const display = formatted.length > 120 ? formatted.slice(0, 120) + '…' : formatted;
-            return `<td class="sqlnb-cell" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);font-family:var(--font-mono);font-size:13px;background:${bg};color:var(--text-main);${stickyStyle}" title="${escapeHtml(str)}">${escapeHtml(display)}</td>`;
+            const fkLink = cellFk
+                ? `<span class="sqlnb-fk-cell-link" data-fk-schema="${escapeHtml(cellFk.targetSchema)}" data-fk-table="${escapeHtml(cellFk.targetTable)}" data-fk-column="${escapeHtml(cellFk.targetColumn)}" data-fk-value="${escapeHtml(rawVal)}" title="Open ${escapeHtml(cellFk.targetTable)} → ${escapeHtml(cellFk.targetColumn)}">🔗→</span>`
+                : '';
+            return `<td class="sqlnb-cell${cellFk ? ' sqlnb-fk-cell' : ''}" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);font-family:var(--font-mono);font-size:13px;background:${bg};color:var(--text-main);${stickyStyle}" title="${escapeHtml(str)}"><div class="sqlnb-cell-content">${escapeHtml(display)}${fkLink}</div></td>`;
         }).join('');
         return `<tr><td class="sqlnb-rownum" style="padding:4px 8px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);background:${bg};color:var(--text-subtle);font-size:11px;text-align:right;user-select:none;min-width:36px;">${i + 1}</td>${cellsHtml}</tr>`;
     }).join('');
@@ -261,6 +284,21 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
             }
         });
     }
+
+    // FK cell link click → open preview modal
+    root.querySelectorAll('.sqlnb-fk-cell-link').forEach((link: any) => {
+        link.addEventListener('click', (e: any) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const schema = link.dataset.fkSchema;
+            const table = link.dataset.fkTable;
+            const column = link.dataset.fkColumn;
+            const value = link.dataset.fkValue;
+            if (schema && table && column && value !== undefined) {
+                requestFkPreview(schema, table, column, value);
+            }
+        }, { signal });
+    });
 
     // Sort Menus
     function closeAllSortMenus() { root.querySelectorAll('.sqlnb-sort-menu').forEach((m: any) => m.style.display = 'none'); }
