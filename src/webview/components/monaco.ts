@@ -172,7 +172,7 @@ function registerSqlCompletionProvider() {
     if (!monaco) return;
 
     monaco.languages.registerCompletionItemProvider('sql', {
-        triggerCharacters: ['.', ' ', '"'],
+        triggerCharacters: ['.', '"'],
 
         provideCompletionItems(model: any, position: any) {
             const schema: SchemaTableInfo[] = (window as any)._sqlnbSchema;
@@ -267,6 +267,13 @@ function registerSqlCompletionProvider() {
                     });
                 }
                 return { suggestions };
+            }
+
+            // ─── Guard: require at least 1 character typed ───
+            // Don't show general suggestions when cursor is on empty space
+            // (e.g. user just clicked or pressed space without typing)
+            if (word.word.length < 1) {
+                return { suggestions: [] };
             }
 
             // ─── CASE 3: General context → columns from referenced tables/aliases ───
