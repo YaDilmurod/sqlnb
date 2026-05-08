@@ -408,12 +408,31 @@ function renderCells() {
     let content = '<div class="cell-content">';
 
     if (cell.type === 'connection') {
-      content += '<div class="conn-form"><div class="conn-row"><input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(cell.content) + '" placeholder="postgresql://user:password@localhost:5432/dbname" spellcheck="false" list="recent-conns-' + idx + '" />';
+      // Parse driver type from cell content (format: "driverType||connString" or just "connString")
+      let storedDriver = 'postgres';
+      let connString = cell.content;
+      if (cell.content.includes('||')) {
+        const parts = cell.content.split('||');
+        storedDriver = parts[0];
+        connString = parts.slice(1).join('||');
+      } else if (!cell.content.startsWith('postgres') && cell.content && !cell.content.includes('://')) {
+        storedDriver = 'duckdb';
+      }
+      const pgPlaceholder = 'postgresql://user:password@localhost:5432/dbname';
+      const duckPlaceholder = '/path/to/database.db  (leave empty for in-memory)';
+      const placeholder = storedDriver === 'duckdb' ? duckPlaceholder : pgPlaceholder;
+      content += '<div class="conn-form"><div class="conn-row">';
+      content += '<select id="conn-driver-' + idx + '" class="conn-driver-select">';
+      content += '<option value="postgres"' + (storedDriver === 'postgres' ? ' selected' : '') + '>PostgreSQL</option>';
+      content += '<option value="duckdb"' + (storedDriver === 'duckdb' ? ' selected' : '') + '>DuckDB</option>';
+      content += '</select>';
+      content += '<input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(connString) + '" placeholder="' + placeholder + '" spellcheck="false" list="recent-conns-' + idx + '" />';
       content += '<datalist id="recent-conns-' + idx + '">' + recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('') + '</datalist>';
       if (isConnected) {
         content += '<button class="btn-primary" style="background:var(--danger)" data-action="disconnectDb">Disconnect</button>';
       } else {
-        const hasValue = !!cell.content.trim();
+        // DuckDB allows empty conn string (in-memory), so always enable for duckdb
+        const hasValue = storedDriver === 'duckdb' || !!connString.trim();
         const connDisabled = !hasValue ? ' disabled style="opacity:0.4;cursor:not-allowed;"' : '';
         content += '<button class="btn-primary" id="conn-btn-' + idx + '" data-action="connectDb" data-idx="' + idx + '"' + connDisabled + '>Connect</button>';
       }
@@ -484,28 +503,47 @@ function renderCells() {
       }
     } else if (cell.type === 'connection') {
       const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
+      const driverSel = document.getElementById('conn-driver-' + idx) as HTMLSelectElement;
+
+      function saveConnContent() {
+        if (!inp || !driverSel) return;
+        cells[idx].content = driverSel.value + '||' + inp.value;
+        save();
+      }
+
+      function updateConnBtnState() {
+        const connBtn = document.getElementById('conn-btn-' + idx) as HTMLButtonElement;
+        if (!connBtn || !inp || !driverSel) return;
+        const isDuck = driverSel.value === 'duckdb';
+        const hasValue = isDuck || !!inp.value.trim();
+        connBtn.disabled = !hasValue;
+        connBtn.style.opacity = hasValue ? '1' : '0.4';
+        connBtn.style.cursor = hasValue ? 'pointer' : 'not-allowed';
+      }
+
+      if (driverSel) {
+        driverSel.addEventListener('change', () => {
+          const isDuck = driverSel.value === 'duckdb';
+          if (inp) {
+            inp.placeholder = isDuck
+              ? '/path/to/database.db  (leave empty for in-memory)'
+              : 'postgresql://user:password@localhost:5432/dbname';
+          }
+          saveConnContent();
+          updateConnBtnState();
+        });
+      }
+
       if (inp) {
         inp.addEventListener('input', () => {
-          cells[idx].content = inp.value;
-          save();
-          // Enable/disable connect button based on input (dynamic lookup)
-          const connBtn = document.getElementById('conn-btn-' + idx) as HTMLButtonElement;
-          if (connBtn) {
-            if (inp.value.trim()) {
-              connBtn.disabled = false;
-              connBtn.style.opacity = '1';
-              connBtn.style.cursor = 'pointer';
-            } else {
-              connBtn.disabled = true;
-              connBtn.style.opacity = '0.4';
-              connBtn.style.cursor = 'not-allowed';
-            }
-          }
+          saveConnContent();
+          updateConnBtnState();
         });
         inp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
-            if (inp.value.trim()) (window as any).connectDb(idx);
+            const isDuck = driverSel?.value === 'duckdb';
+            if (isDuck || inp.value.trim()) (window as any).connectDb(idx);
           }
         });
       }
@@ -790,14 +828,20 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 
 (window as any).connectDb = (idx: number) => {
   const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
+  const driverSel = document.getElementById('conn-driver-' + idx) as HTMLSelectElement;
   const msgEl = document.getElementById('conn-msg-' + idx);
-  if (!inp || !inp.value.trim()) return;
+  const selectedDriver = driverSel?.value || 'auto';
+  const connStr = inp?.value?.trim() || '';
+
+  // DuckDB allows empty (in-memory), Postgres requires a connection string
+  if (selectedDriver !== 'duckdb' && !connStr) return;
+
   if (msgEl) msgEl.innerHTML = '<span style="color:var(--warning)">Connecting...</span>';
-  
+
   vscode.postMessage({ 
     type: 'connect', 
-    connectionString: inp.value.trim(),
-    driverType: 'auto'
+    connectionString: connStr,
+    driverType: selectedDriver
   });
 };
 
