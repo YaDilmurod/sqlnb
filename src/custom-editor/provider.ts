@@ -235,7 +235,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           }
           const q = `SELECT * FROM ${msg.tableName} LIMIT 200`;
           const result = await this.executeQuery(session, q);
-          webviewPanel.webview.postMessage({ type: 'preview-table-result', tableName: msg.tableName, error: result.error, fields: result.fields || [], rows: result.rows || [], elapsedMs: result.elapsedMs });
+          webviewPanel.webview.postMessage({ type: 'preview-table-result', tableName: msg.tableName, error: result.error, fields: result.fields || [], rows: result.rows || [], elapsedMs: result.elapsedMs, command: q });
           break;
         }
         case 'chart-aggregate': {
@@ -437,6 +437,8 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
     command?: string;
     elapsedMs?: number;
     error?: string;
+    errorDetails?: Record<string, any>;
+    query?: string;
     hasMore?: boolean;
     maxRows?: number;
     totalRowCount?: number;
@@ -500,7 +502,41 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
       };
     } catch (err: any) {
       const elapsed = performance.now() - start;
-      return { error: err instanceof Error ? err.message : String(err), elapsedMs: elapsed };
+      const errorMessage = err instanceof Error ? err.message : String(err);
+      
+      // Extract rich error details for better error display
+      const errorDetails: Record<string, any> = {};
+      
+      // PostgreSQL provides structured error fields
+      if (err.position) errorDetails.position = Number(err.position); // character offset in query
+      if (err.detail) errorDetails.detail = String(err.detail);
+      if (err.hint) errorDetails.hint = String(err.hint);
+      if (err.severity) errorDetails.severity = String(err.severity);
+      if (err.code) errorDetails.code = String(err.code); // SQLSTATE code
+      if (err.where) errorDetails.where = String(err.where);
+      if (err.schema) errorDetails.schema = String(err.schema);
+      if (err.table) errorDetails.table = String(err.table);
+      if (err.column) errorDetails.column = String(err.column);
+      if (err.dataType) errorDetails.dataType = String(err.dataType);
+      if (err.constraint) errorDetails.constraint = String(err.constraint);
+      
+      // DuckDB: parse LINE and position from error message text
+      if (!err.position && errorMessage) {
+        // DuckDB often includes: LINE N: <text>\n ^  or  Error: ... (line:N:col:M)
+        const lineMatch = errorMessage.match(/LINE\s+(\d+):/i);
+        if (lineMatch) errorDetails.line = Number(lineMatch[1]);
+        
+        // Try to extract position marker from caret (^) indicator
+        const caretMatch = errorMessage.match(/\n(\s*)\^/);
+        if (caretMatch) errorDetails.caretOffset = caretMatch[1].length;
+      }
+      
+      return { 
+        error: errorMessage, 
+        elapsedMs: elapsed, 
+        errorDetails: Object.keys(errorDetails).length > 0 ? errorDetails : undefined,
+        query: query  // pass original query for error line rendering
+      };
     }
   }
 

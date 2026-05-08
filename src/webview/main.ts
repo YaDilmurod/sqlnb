@@ -53,6 +53,130 @@ function parseCells(jsonText: string): Cell[] {
   }
 }
 
+/**
+ * Build a rich, detailed error display for SQL errors.
+ * Shows the error line with highlighting, a caret marker at the error position,
+ * and supplementary info (DETAIL, HINT, SQLSTATE, etc.)
+ */
+function buildDetailedErrorHtml(errorMsg: string, query: string | undefined, errorDetails: any, escape: (s: any) => string): string {
+  let html = '';
+
+  // ── Error header with message ──
+  const severity = errorDetails?.severity || 'ERROR';
+  const sqlState = errorDetails?.code;
+  html += '<div class="sql-error-detail">';
+  html += '<div class="sql-error-header">';
+  html += '<span class="sql-error-severity">' + escape(severity) + '</span>';
+  if (sqlState) {
+    html += '<span class="sql-error-code">' + escape(sqlState) + '</span>';
+  }
+  html += '</div>';
+  html += '<div class="sql-error-message">' + escape(errorMsg) + '</div>';
+
+  // ── SQL source with error line highlighted ──
+  if (query) {
+    const lines = query.split('\n');
+    let errorLine = -1; // 0-indexed
+    let errorCol = -1;  // 0-indexed column within the error line
+
+    // PostgreSQL: position is a 1-based character offset into the query
+    if (errorDetails?.position) {
+      const pos = errorDetails.position; // 1-based
+      let charCount = 0;
+      for (let i = 0; i < lines.length; i++) {
+        const lineLen = lines[i].length + 1; // +1 for newline
+        if (charCount + lineLen >= pos) {
+          errorLine = i;
+          errorCol = pos - charCount - 1; // convert to 0-based
+          break;
+        }
+        charCount += lineLen;
+      }
+    }
+    // DuckDB: parsed line number (1-based)
+    else if (errorDetails?.line) {
+      errorLine = errorDetails.line - 1;
+      if (errorDetails.caretOffset !== undefined) {
+        errorCol = errorDetails.caretOffset;
+      }
+    }
+
+    // Determine which lines to show: context around the error line
+    const contextSize = 3;
+    let startLine = 0;
+    let endLine = lines.length - 1;
+    if (errorLine >= 0 && lines.length > (contextSize * 2 + 1)) {
+      startLine = Math.max(0, errorLine - contextSize);
+      endLine = Math.min(lines.length - 1, errorLine + contextSize);
+    }
+
+    html += '<div class="sql-error-source">';
+    for (let i = startLine; i <= endLine; i++) {
+      const lineNum = i + 1;
+      const isErrorLine = i === errorLine;
+      const lineClass = isErrorLine ? 'sql-error-line sql-error-line-highlight' : 'sql-error-line';
+      
+      html += '<div class="' + lineClass + '">';
+      html += '<span class="sql-error-line-num">' + lineNum + '</span>';
+      
+      if (isErrorLine && errorCol >= 0) {
+        // Split the line to highlight the error position
+        const lineText = lines[i];
+        const before = lineText.substring(0, errorCol);
+        const atError = lineText.substring(errorCol, errorCol + 1) || ' ';
+        const after = lineText.substring(errorCol + 1);
+        html += '<span class="sql-error-line-text">';
+        html += escape(before);
+        html += '<span class="sql-error-caret-char">' + escape(atError) + '</span>';
+        html += escape(after);
+        html += '</span>';
+      } else {
+        html += '<span class="sql-error-line-text">' + escape(lines[i]) + '</span>';
+      }
+      
+      html += '</div>';
+
+      // Render caret indicator below the error line
+      if (isErrorLine && errorCol >= 0) {
+        html += '<div class="sql-error-caret-row">';
+        html += '<span class="sql-error-line-num"></span>';
+        html += '<span class="sql-error-caret-indicator">' + ' '.repeat(errorCol) + '^' + '</span>';
+        html += '</div>';
+      }
+    }
+    // If we truncated lines, show ellipsis indicators
+    if (startLine > 0) {
+      // Prepend ellipsis (inserted at top via CSS order or we rebuild — simpler to note)
+    }
+    html += '</div>';
+  }
+
+  // ── Supplementary details ──
+  const details: Array<{ label: string; value: string }> = [];
+  if (errorDetails?.detail) details.push({ label: 'Detail', value: errorDetails.detail });
+  if (errorDetails?.hint) details.push({ label: 'Hint', value: errorDetails.hint });
+  if (errorDetails?.where) details.push({ label: 'Where', value: errorDetails.where });
+  if (errorDetails?.schema) details.push({ label: 'Schema', value: errorDetails.schema });
+  if (errorDetails?.table) details.push({ label: 'Table', value: errorDetails.table });
+  if (errorDetails?.column) details.push({ label: 'Column', value: errorDetails.column });
+  if (errorDetails?.constraint) details.push({ label: 'Constraint', value: errorDetails.constraint });
+  if (errorDetails?.dataType) details.push({ label: 'Data Type', value: errorDetails.dataType });
+  
+  if (details.length > 0) {
+    html += '<div class="sql-error-extras">';
+    for (const d of details) {
+      html += '<div class="sql-error-extra-row">';
+      html += '<span class="sql-error-extra-label">' + escape(d.label) + ':</span> ';
+      html += '<span class="sql-error-extra-value">' + escape(d.value) + '</span>';
+      html += '</div>';
+    }
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
+}
+
 function serializeCells(): string {
   const data = {
     cells: cells.map(c => ({ type: c.type, content: c.content, name: c.name }))
@@ -948,7 +1072,8 @@ window.addEventListener('message', event => {
     const ms = msg.elapsedMs ? formatElapsed(msg.elapsedMs) : '';
 
     if (msg.error) {
-      outputHtml += '<div class="output-meta"><span class="meta-tag tag-err">ERROR</span> ' + ms + '</div><div class="output-error">' + escapeHtml(msg.error) + '</div>';
+      outputHtml += '<div class="output-meta"><span class="meta-tag tag-err">ERROR</span> ' + ms + '</div>';
+      outputHtml += buildDetailedErrorHtml(msg.error, msg.query || msg.command, msg.errorDetails, escapeHtml);
     } else if (msg.rows && msg.rows.length > 0) {
       if (msg.fields) {
         const cellName = cells[idx].name || `table_${idx}`;
