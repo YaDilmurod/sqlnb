@@ -10,7 +10,7 @@ import { renderOverviewBlock, handleOverviewLoadResult } from './components/over
 import { renderAdvancedTableHtml, setupAdvancedTableListeners } from './components/table';
 import { handleFkPreviewResult, updateConstraintCache } from './components/fk-preview';
 import { defaultProfilerViewBuilder } from './components/profiler-view';
-import { renderWiki } from './components/wiki';
+import { renderWiki, setupWikiSearch } from './components/wiki';
 import { initCustomSelects, initCustomAutocompletes } from './components/dropdown';
 import { SPINNER_SVG, processingHtml, formatElapsed, unwrapCustomSelect } from './components/ui-utils';
 
@@ -50,7 +50,7 @@ function parseCells(jsonText: string): Cell[] {
     const data = JSON.parse(jsonText);
     return data.cells || [];
   } catch {
-    return [{ type: 'connection', content: '' }, { type: 'schema', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
+    return [{ type: 'connection', content: 'duckdb||' }, { type: 'schema', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
   }
 }
 
@@ -421,12 +421,13 @@ function renderCells() {
       const pgPlaceholder = 'postgresql://user:password@localhost:5432/dbname';
       const duckPlaceholder = '/path/to/database.db  (leave empty for in-memory)';
       const placeholder = storedDriver === 'duckdb' ? duckPlaceholder : pgPlaceholder;
-      content += '<div class="conn-form"><div class="conn-row">';
-      content += '<select id="conn-driver-' + idx + '" class="conn-driver-select">';
-      content += '<option value="postgres"' + (storedDriver === 'postgres' ? ' selected' : '') + '>PostgreSQL</option>';
-      content += '<option value="duckdb"' + (storedDriver === 'duckdb' ? ' selected' : '') + '>DuckDB</option>';
-      content += '</select>';
-      content += '<input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(connString) + '" placeholder="' + placeholder + '" spellcheck="false" list="recent-conns-' + idx + '" />';
+      content += '<div class="conn-form"><div class="conn-row" style="display:flex; gap:8px;">';
+      content += `<div class="conn-driver-toggle" id="conn-toggle-container-${idx}" style="display:flex; background:var(--vscode-input-background); border:1px solid var(--vscode-input-border); border-radius:4px; overflow:hidden;">
+        <button type="button" class="conn-driver-btn" data-driver="duckdb" style="padding:4px 12px; border:none; background:${storedDriver === 'duckdb' ? 'var(--button-bg)' : 'transparent'}; color:var(--text-color); cursor:pointer;">DuckDB</button>
+        <button type="button" class="conn-driver-btn" data-driver="postgres" style="padding:4px 12px; border:none; background:${storedDriver === 'postgres' ? 'var(--button-bg)' : 'transparent'}; color:var(--text-color); cursor:pointer; border-left:1px solid var(--vscode-input-border);">PostgreSQL</button>
+      </div>`;
+      content += `<input type="hidden" id="conn-driver-${idx}" value="${escapeHtml(storedDriver)}" />`;
+      content += '<input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(connString) + '" placeholder="' + placeholder + '" spellcheck="false" list="recent-conns-' + idx + '" style="flex:1;" />';
       content += '<datalist id="recent-conns-' + idx + '">' + recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('') + '</datalist>';
       if (isConnected) {
         content += '<button class="btn-primary" style="background:var(--danger)" data-action="disconnectDb">Disconnect</button>';
@@ -503,35 +504,41 @@ function renderCells() {
       }
     } else if (cell.type === 'connection') {
       const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
-      const driverSel = document.getElementById('conn-driver-' + idx) as HTMLSelectElement;
+      const driverInp = document.getElementById('conn-driver-' + idx) as HTMLInputElement;
+      const toggleContainer = document.getElementById('conn-toggle-container-' + idx);
+
+      if (toggleContainer && driverInp && inp) {
+        toggleContainer.querySelectorAll('.conn-driver-btn').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const drv = btn.getAttribute('data-driver') || 'postgres';
+            driverInp.value = drv;
+            // update UI
+            toggleContainer.querySelectorAll('.conn-driver-btn').forEach(b => {
+              (b as HTMLElement).style.background = b.getAttribute('data-driver') === drv ? 'var(--button-bg)' : 'transparent';
+            });
+            inp.placeholder = drv === 'duckdb' 
+              ? '/path/to/database.db  (leave empty for in-memory)' 
+              : 'postgresql://user:password@localhost:5432/dbname';
+            saveConnContent();
+            updateConnBtnState();
+          });
+        });
+      }
 
       function saveConnContent() {
-        if (!inp || !driverSel) return;
-        cells[idx].content = driverSel.value + '||' + inp.value;
+        if (!inp || !driverInp) return;
+        cells[idx].content = driverInp.value + '||' + inp.value;
         save();
       }
 
       function updateConnBtnState() {
         const connBtn = document.getElementById('conn-btn-' + idx) as HTMLButtonElement;
-        if (!connBtn || !inp || !driverSel) return;
-        const isDuck = driverSel.value === 'duckdb';
+        if (!connBtn || !inp || !driverInp) return;
+        const isDuck = driverInp.value === 'duckdb';
         const hasValue = isDuck || !!inp.value.trim();
         connBtn.disabled = !hasValue;
         connBtn.style.opacity = hasValue ? '1' : '0.4';
         connBtn.style.cursor = hasValue ? 'pointer' : 'not-allowed';
-      }
-
-      if (driverSel) {
-        driverSel.addEventListener('change', () => {
-          const isDuck = driverSel.value === 'duckdb';
-          if (inp) {
-            inp.placeholder = isDuck
-              ? '/path/to/database.db  (leave empty for in-memory)'
-              : 'postgresql://user:password@localhost:5432/dbname';
-          }
-          saveConnContent();
-          updateConnBtnState();
-        });
       }
 
       if (inp) {
@@ -542,7 +549,7 @@ function renderCells() {
         inp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
             e.preventDefault();
-            const isDuck = driverSel?.value === 'duckdb';
+            const isDuck = driverInp?.value === 'duckdb';
             if (isDuck || inp.value.trim()) (window as any).connectDb(idx);
           }
         });
@@ -828,7 +835,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 
 (window as any).connectDb = (idx: number) => {
   const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
-  const driverSel = document.getElementById('conn-driver-' + idx) as HTMLSelectElement;
+  const driverSel = document.getElementById('conn-driver-' + idx) as HTMLInputElement;
   const msgEl = document.getElementById('conn-msg-' + idx);
   const selectedDriver = driverSel?.value || 'auto';
   const connStr = inp?.value?.trim() || '';
@@ -1376,6 +1383,7 @@ document.addEventListener('click', (e) => {
     const isVisible = popup.style.display !== 'none';
     if (!isVisible) {
       popup.innerHTML = renderWiki(driverType);
+      setupWikiSearch(popup);
       const rect = btn.getBoundingClientRect();
       popup.style.display = 'block';
       popup.style.top = (rect.bottom + 8) + 'px';

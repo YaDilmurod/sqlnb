@@ -669,6 +669,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
 <body>
   <div id="app"></div>
   <script src="${mainScriptUri}"></script>
+  <script src="https://cdn.jsdelivr.net/npm/mermaid@10/dist/mermaid.min.js"></script>
 </body>
 </html>`;
   }

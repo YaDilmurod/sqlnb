@@ -1,4 +1,4 @@
-import { formatElapsed } from './ui-utils';
+import { formatElapsed, SPINNER_SVG } from './ui-utils';
 
 declare const window: any;
 declare const document: any;
@@ -190,7 +190,84 @@ export function handleSchemaLoadResult(msg: any, escapeHtml: (s: any) => string)
         schemaIdx++;
     }
 
-    content.innerHTML = html;
+    const headerHtml = `
+      <div class="sch-view-toggle" style="padding: 8px 12px; border-bottom: 1px solid var(--border-color); display: flex; gap: 8px; background: var(--bg-surface);">
+        <button class="sch-view-btn active" data-view="list" style="padding: 4px 12px; border: 1px solid var(--border-color); background: var(--button-bg); color: var(--text-color); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">List View</button>
+        <button class="sch-view-btn" data-view="erd" style="padding: 4px 12px; border: 1px solid var(--border-color); background: transparent; color: var(--text-color); border-radius: 4px; cursor: pointer; font-size: 12px; font-weight: 500;">ERD View</button>
+      </div>
+    `;
+
+    content.innerHTML = headerHtml + 
+      '<div id="sch-list-container-' + idx + '">' + html + '</div>' + 
+      '<div id="sch-erd-container-' + idx + '" style="display:none; padding:16px; background: var(--bg-surface); text-align: center; overflow: auto; min-height: 200px;"></div>';
+
+    // ── Wire up view toggles ──
+    const listBtn = content.querySelector('.sch-view-btn[data-view="list"]');
+    const erdBtn = content.querySelector('.sch-view-btn[data-view="erd"]');
+    const listContainer = content.querySelector('#sch-list-container-' + idx);
+    const erdContainer = content.querySelector('#sch-erd-container-' + idx);
+
+    if (listBtn && erdBtn && listContainer && erdContainer) {
+        listBtn.addEventListener('click', () => {
+            (listBtn as HTMLElement).style.background = 'var(--button-bg)';
+            (erdBtn as HTMLElement).style.background = 'transparent';
+            (listContainer as HTMLElement).style.display = 'block';
+            (erdContainer as HTMLElement).style.display = 'none';
+        });
+
+        erdBtn.addEventListener('click', async () => {
+            (erdBtn as HTMLElement).style.background = 'var(--button-bg)';
+            (listBtn as HTMLElement).style.background = 'transparent';
+            (listContainer as HTMLElement).style.display = 'none';
+            (erdContainer as HTMLElement).style.display = 'block';
+
+            if (!(erdContainer as HTMLElement).hasAttribute('data-rendered')) {
+                (erdContainer as HTMLElement).innerHTML = '<div style="color:var(--text-muted);">' + SPINNER_SVG + ' Generating ERD...</div>';
+                
+                // Generate Mermaid syntax
+                let m = 'erDiagram\n';
+                const fks = (window as any)?._sqlnbConstraints?.foreignKeys || [];
+                
+                const validTables = new Set<string>();
+                for (const t of tables) {
+                    if (t.tableType !== 'table') continue;
+                    const safeTableName = t.name.replace(/[^a-zA-Z0-9_]/g, '_');
+                    validTables.add(t.schema + '.' + t.name);
+                    m += `  ${safeTableName} {\n`;
+                    for (const c of t.columns) {
+                        const safeColName = c.name.replace(/[^a-zA-Z0-9_]/g, '_');
+                        let safeType = c.dataType.replace(/[^a-zA-Z0-9_]/g, '_');
+                        if (safeType.length > 20) safeType = safeType.substring(0, 20);
+                        const pk = c.isPrimaryKey ? ' PK' : '';
+                        m += `    ${safeType} ${safeColName}${pk}\n`;
+                    }
+                    m += `  }\n`;
+                }
+
+                for (const fk of fks) {
+                    if (validTables.has(fk.sourceSchema + '.' + fk.sourceTable) && validTables.has(fk.targetSchema + '.' + fk.targetTable)) {
+                        const srcTable = fk.sourceTable.replace(/[^a-zA-Z0-9_]/g, '_');
+                        const tgtTable = fk.targetTable.replace(/[^a-zA-Z0-9_]/g, '_');
+                        m += `  ${tgtTable} ||--o{ ${srcTable} : "${fk.sourceColumn}"\n`;
+                    }
+                }
+
+                try {
+                    const mermaid = (window as any).mermaid;
+                    if (mermaid) {
+                        mermaid.initialize({ startOnLoad: false, theme: 'default' });
+                        const { svg } = await mermaid.render('erd-graph-' + idx, m);
+                        (erdContainer as HTMLElement).innerHTML = svg;
+                        (erdContainer as HTMLElement).setAttribute('data-rendered', 'true');
+                    } else {
+                        (erdContainer as HTMLElement).innerHTML = '<div style="color:var(--danger);">Mermaid.js failed to load.</div>';
+                    }
+                } catch (err: any) {
+                    (erdContainer as HTMLElement).innerHTML = '<div style="color:var(--danger); text-align: left;"><pre>' + escapeHtml(err.message || String(err)) + '</pre></div>';
+                }
+            }
+        });
+    }
 
     // ── Wire up toggle interactions ──
 
