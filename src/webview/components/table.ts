@@ -1,6 +1,9 @@
 import { defaultProfilerViewBuilder } from './profiler-view';
-import { SPINNER_SVG, formatElapsed, exportButtonsHtml, formatNumber } from './ui-utils';
+import { SPINNER_SVG, formatElapsed, exportButtonsHtml, formatNumber, oidToType } from './ui-utils';
 import { isPrimaryKey, getForeignKeyInfo, requestFkPreview } from './fk-preview';
+
+// SVG icon for FK cell link (no emojis per RULES.md)
+const FK_LINK_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
 
 declare const window: any;
 declare const document: any;
@@ -12,16 +15,6 @@ let tableAbortControllers = new Map<number, AbortController>();
 /** Active WHERE-clause filter expressions per cell index. */
 const activeFilters = new Map<number, string>();
 
-function oidToType(oid: number) {
-    const map: Record<number, string> = {
-        16: 'bool', 20: 'int8', 21: 'int2', 23: 'int4',
-        25: 'text', 114: 'json', 700: 'float4', 701: 'float8',
-        1043: 'varchar', 1082: 'date', 1114: 'timestamp',
-        1184: 'timestamptz', 1700: 'numeric', 2950: 'uuid',
-        3802: 'jsonb'
-    };
-    return map[oid] || `type:${oid}`;
-}
 
 export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: any) => string): string {
     const { rows, fields, elapsedMs, hasMore, maxRows, currentSort } = msg;
@@ -145,9 +138,9 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
             const formatted = formatNumber(str);
             const display = formatted.length > 120 ? formatted.slice(0, 120) + '…' : formatted;
             const fkLink = cellFk
-                ? `<span class="sqlnb-fk-cell-link" data-fk-schema="${escapeHtml(cellFk.targetSchema)}" data-fk-table="${escapeHtml(cellFk.targetTable)}" data-fk-column="${escapeHtml(cellFk.targetColumn)}" data-fk-value="${escapeHtml(rawVal)}" title="Open ${escapeHtml(cellFk.targetTable)} → ${escapeHtml(cellFk.targetColumn)}">🔗→</span>`
+                ? `<span class="sqlnb-fk-cell-link" data-fk-schema="${escapeHtml(cellFk.targetSchema)}" data-fk-table="${escapeHtml(cellFk.targetTable)}" data-fk-column="${escapeHtml(cellFk.targetColumn)}" data-fk-value="${escapeHtml(rawVal)}" title="Open ${escapeHtml(cellFk.targetTable)} → ${escapeHtml(cellFk.targetColumn)}">${FK_LINK_ICON}</span>`
                 : '';
-            return `<td class="sqlnb-cell${cellFk ? ' sqlnb-fk-cell' : ''}" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);font-family:var(--font-mono);font-size:13px;background:${bg};color:var(--text-main);${stickyStyle}" title="${escapeHtml(str)}"><div class="sqlnb-cell-content">${escapeHtml(display)}${fkLink}</div></td>`;
+            return `<td class="sqlnb-cell${cellFk ? ' sqlnb-fk-cell' : ''}" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);font-family:var(--font-mono);font-size:13px;background:${bg};color:var(--text-main);position:relative;${stickyStyle}" title="${escapeHtml(str)}">${escapeHtml(display)}${fkLink}</td>`;
         }).join('');
         return `<tr><td class="sqlnb-rownum" style="padding:4px 8px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);background:${bg};color:var(--text-subtle);font-size:11px;text-align:right;user-select:none;min-width:36px;">${i + 1}</td>${cellsHtml}</tr>`;
     }).join('');
@@ -433,8 +426,12 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
             if (cell) {
                 const val = cell.getAttribute('data-val');
                 if (val !== null && val !== '') {
-                    const num = parseFloat(val);
-                    if (!isNaN(num)) numericValues.push(num);
+                    // Strict numeric check: entire string must be a valid number.
+                    // parseFloat('5d56aca6-...') would return 5, which is wrong for UUIDs.
+                    const trimmed = val.trim();
+                    if (trimmed !== '' && !isNaN(Number(trimmed)) && isFinite(Number(trimmed))) {
+                        numericValues.push(Number(trimmed));
+                    }
                 }
             }
         });

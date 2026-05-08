@@ -85,7 +85,6 @@ function renderTypeSection(
     title: string,
     icon: string,
     tables: SchemaTableInfo[],
-    badgeColor: string,
     idx: number,
     escapeHtml: (s: any) => string
 ): string {
@@ -102,8 +101,7 @@ function renderTypeSection(
             <span class="sch-type-chevron">${CHEVRON_RIGHT}</span>
             ${icon}
             <span class="sch-type-title">${title}</span>
-            <span class="sch-type-count" style="background:${badgeColor};">${tables.length}</span>
-            ${sizeStr ? `<span class="sch-type-size">${sizeStr}</span>` : ''}
+            <span class="sch-table-meta">${tables.length}${sizeStr ? ' · ' + sizeStr : ''}</span>
         </div>
         <div class="sch-type-body" data-type-body="${sectionId}" style="display:none;">
             ${items}
@@ -127,9 +125,9 @@ function renderSchemaSection(
     const sectionKey = `s${idx}-${schemaIdx}`;
 
     let typeSections = '';
-    typeSections += renderTypeSection(`${sectionKey}-tables`, 'Tables', TABLE_ICON, baseTables, 'var(--primary)', idx, escapeHtml);
-    typeSections += renderTypeSection(`${sectionKey}-views`, 'Views', VIEW_ICON, views, 'var(--success)', idx, escapeHtml);
-    typeSections += renderTypeSection(`${sectionKey}-matviews`, 'Materialized Views', MATVIEW_ICON, matViews, 'var(--warning)', idx, escapeHtml);
+    typeSections += renderTypeSection(`${sectionKey}-tables`, 'Tables', TABLE_ICON, baseTables, idx, escapeHtml);
+    typeSections += renderTypeSection(`${sectionKey}-views`, 'Views', VIEW_ICON, views, idx, escapeHtml);
+    typeSections += renderTypeSection(`${sectionKey}-matviews`, 'Materialized Views', MATVIEW_ICON, matViews, idx, escapeHtml);
 
     return `<div class="sch-schema-section" data-schema-section="${sectionKey}">
         <div class="sch-schema-header" data-toggle-schema="${sectionKey}">

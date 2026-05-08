@@ -84,3 +84,23 @@ export function unwrapCustomSelect(sel: HTMLSelectElement | null): void {
   }
   sel.removeAttribute('data-initialized');
 }
+
+/**
+ * Map a PostgreSQL OID to a human-readable type name.
+ * User-defined types (enums, composites) have OIDs > 10000 and are shown as 'custom'.
+ */
+export function oidToType(oid: number): string {
+  const map: Record<number, string> = {
+    16: 'bool', 17: 'bytea', 18: 'char', 19: 'name', 20: 'int8', 21: 'int2', 23: 'int4',
+    25: 'text', 26: 'oid', 28: 'xid', 114: 'json', 142: 'xml',
+    700: 'float4', 701: 'float8', 790: 'money',
+    1042: 'bpchar', 1043: 'varchar', 1082: 'date', 1083: 'time',
+    1114: 'timestamp', 1184: 'timestamptz', 1186: 'interval',
+    1266: 'timetz', 1560: 'bit', 1562: 'varbit',
+    1700: 'numeric', 2950: 'uuid', 3802: 'jsonb',
+    2249: 'record', 3220: 'pg_lsn', 3614: 'tsvector', 3615: 'tsquery',
+    3926: 'int4range', 3927: 'numrange', 2951: '_uuid',
+    1009: '_text', 1007: '_int4', 1016: '_int8', 1021: '_float4', 1022: '_float8',
+  };
+  return map[oid] || (oid > 10000 ? 'custom' : `type:${oid}`);
+}

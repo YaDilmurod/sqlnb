@@ -926,6 +926,15 @@ const PREVIEW_TABLE_IDX = 99999;
   // Clear old preview data + pinned columns for the preview index
   _previewTableData = null;
 
+  // Remove any existing overlay
+  const oldOverlay = document.getElementById('table-preview-overlay');
+  if (oldOverlay) oldOverlay.remove();
+
+  // Create overlay backdrop
+  const overlay = document.createElement('div');
+  overlay.id = 'table-preview-overlay';
+  overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.4);';
+
   let popup = document.getElementById('table-preview-popup');
   if (!popup) {
     popup = document.createElement('div');
@@ -945,7 +954,7 @@ const PREVIEW_TABLE_IDX = 99999;
     popup.innerHTML = `
       <div style="padding: 16px 20px; border-bottom: 1px solid var(--border-color); display: flex; justify-content: space-between; align-items: center; background: var(--bg-surface-inset); border-top-left-radius: var(--border-radius-md); border-top-right-radius: var(--border-radius-md);">
         <h3 style="margin: 0; font-size: 15px; color: var(--text-main);" id="table-preview-title">Preview: ${escapeHtml(tableName)}</h3>
-        <button class="btn-action" onclick="document.getElementById('table-preview-popup').style.display='none'">
+        <button class="btn-action" id="table-preview-close-btn">
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
@@ -961,7 +970,26 @@ const PREVIEW_TABLE_IDX = 99999;
     if (contentEl) contentEl.innerHTML = SPINNER_SVG + ' Loading...';
     popup.style.display = 'flex';
   }
-  
+
+  document.body.appendChild(overlay);
+  document.body.style.overflow = 'hidden';
+
+  // Close handler
+  function closePreview() {
+    popup!.style.display = 'none';
+    overlay.remove();
+    document.body.style.overflow = '';
+    document.removeEventListener('keydown', previewEscHandler);
+  }
+  function previewEscHandler(e: KeyboardEvent) {
+    if (e.key === 'Escape') closePreview();
+  }
+
+  const closeBtn = document.getElementById('table-preview-close-btn');
+  if (closeBtn) closeBtn.onclick = closePreview;
+  overlay.addEventListener('click', closePreview);
+  document.addEventListener('keydown', previewEscHandler);
+
   vscode.postMessage({ type: 'preview-table', tableName: tableName });
 };
 
@@ -991,6 +1019,23 @@ const PREVIEW_TABLE_IDX = 99999;
   }
   if (editDiv) editDiv.style.display = 'none';
 };
+
+// ── Global keyboard shortcut guard for input fields ──
+// VS Code webview can intercept Cmd+A/Z/X/C/V before they reach input elements.
+// This capture-phase listener ensures native input shortcuts work correctly
+// whenever a text input or textarea has focus.
+document.addEventListener('keydown', (e: KeyboardEvent) => {
+  const el = document.activeElement;
+  if (!el) return;
+  const tag = el.tagName?.toLowerCase();
+  const isInput = tag === 'input' || tag === 'textarea';
+  if (!isInput) return;
+  // Let Cmd/Ctrl shortcuts pass through natively to the focused input
+  if ((e.metaKey || e.ctrlKey) && ['a', 'c', 'v', 'x', 'z'].includes(e.key.toLowerCase())) {
+    e.stopPropagation(); // prevent VS Code / parent handlers from intercepting
+    // Do NOT preventDefault — let the browser handle the native action
+  }
+}, true); // capture phase — runs before any other handler
 
 // ── Message Listener ──
 
