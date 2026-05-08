@@ -75,23 +75,27 @@ function buildDetailedErrorHtml(errorMsg: string, query: string | undefined, err
 
   // ── SQL source with error line highlighted ──
   if (query) {
-    const lines = query.split('\n');
+    // Normalize line endings: \r\n → \n, then strip any stray \r
+    const normalizedQuery = query.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+    const lines = normalizedQuery.split('\n');
     let errorLine = -1; // 0-indexed
     let errorCol = -1;  // 0-indexed column within the error line
 
-    // PostgreSQL: position is a 1-based character offset into the query
+    // PostgreSQL: position is a 1-based character offset into the query.
+    // We map it into the *original* query (which may have \r\n), then count
+    // newlines in the *normalized* version to locate the line.
     if (errorDetails?.position) {
       const pos = errorDetails.position; // 1-based
-      let charCount = 0;
-      for (let i = 0; i < lines.length; i++) {
-        const lineLen = lines[i].length + 1; // +1 for newline
-        if (charCount + lineLen >= pos) {
-          errorLine = i;
-          errorCol = pos - charCount - 1; // convert to 0-based
-          break;
-        }
-        charCount += lineLen;
-      }
+      // Convert position from the original query to the normalized one:
+      // every \r\n that appears BEFORE pos in the original shrinks by 1 char.
+      const prefixOrig = query.substring(0, pos - 1);
+      const crlfsBefore = (prefixOrig.match(/\r\n/g) || []).length;
+      const normPos = pos - crlfsBefore; // adjusted position in normalizedQuery
+
+      const prefix = normalizedQuery.substring(0, normPos - 1);
+      const lastNL = prefix.lastIndexOf('\n');
+      errorLine = (prefix.match(/\n/g) || []).length;
+      errorCol = lastNL === -1 ? normPos - 1 : normPos - 1 - (lastNL + 1);
     }
     // DuckDB: parsed line number (1-based)
     else if (errorDetails?.line) {
