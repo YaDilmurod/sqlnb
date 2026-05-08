@@ -8,6 +8,8 @@ declare const vscode: any;
 const scrollPositions = new Map<number, number>();
 const pinnedColumnsMap = new Map<number, string[]>();
 let tableAbortControllers = new Map<number, AbortController>();
+/** Active WHERE-clause filter expressions per cell index. */
+const activeFilters = new Map<number, string>();
 
 function oidToType(oid: number) {
     const map: Record<number, string> = {
@@ -173,6 +175,25 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
                 </tbody>
             </table>
         </div>
+        <div class="sqlnb-filter-bar" data-filter-bar="${idx}">
+            <div class="sqlnb-filter-icon" title="WHERE clause filter">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+            </div>
+            <input class="sqlnb-filter-input"
+                   data-filter-input="${idx}"
+                   type="text"
+                   placeholder="Enter a WHERE clause to filter results  (e.g.  status = 'active'  AND  id > 10)"
+                   spellcheck="false"
+                   autocomplete="off"
+                   value="${escapeHtml(activeFilters.get(idx) || '')}" />
+            <button class="sqlnb-filter-apply" data-filter-apply="${idx}" title="Apply filter (Enter)">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+            </button>
+            <button class="sqlnb-filter-clear" data-filter-clear="${idx}" title="Clear filter (Escape)" style="display:${activeFilters.has(idx) ? 'flex' : 'none'}">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+            ${activeFilters.has(idx) ? '<span class="sqlnb-filter-active-badge">FILTERED</span>' : ''}
+        </div>
         <div class="sqlnb-agg-bar">
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Rows:</span> <span class="sqlnb-agg-value">${rowCount}</span></span>
             <span class="sqlnb-agg-item"><span class="sqlnb-agg-label">Columns:</span> <span class="sqlnb-agg-value">${headers.length}</span></span>
@@ -273,6 +294,8 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
             const dir = item.getAttribute('data-sort-dir');
             if (!col || !dir) return;
             closeAllSortMenus();
+            // Sort re-runs the base query — clear any active filter to avoid stale state
+            activeFilters.delete(idx);
             // Show sorting indicator on the summary bar
             const aggBar = root.querySelector('.sqlnb-agg-bar') as HTMLElement;
             if (aggBar) {
@@ -570,5 +593,127 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
         const ls = scrollPositions.get(idx);
         if (ls) tc.scrollLeft = ls;
         tc.addEventListener('scroll', () => scrollPositions.set(idx, tc.scrollLeft));
+    }
+
+    // ── Filter bar listeners ──
+    setupFilterBarListeners(root, idx, msg, escapeHtml);
+}
+
+/** Set up event listeners for the WHERE-clause filter bar. */
+function setupFilterBarListeners(root: HTMLElement, idx: number, msg: any, escapeHtml: (s: any) => string) {
+    const filterInput = root.querySelector(`[data-filter-input="${idx}"]`) as HTMLInputElement;
+    const applyBtn = root.querySelector(`[data-filter-apply="${idx}"]`);
+    const clearBtn = root.querySelector(`[data-filter-clear="${idx}"]`) as HTMLElement;
+    if (!filterInput) return;
+
+    function applyFilter() {
+        const expr = filterInput.value.trim();
+        if (!expr) {
+            // Flash the input to indicate it's empty
+            filterInput.classList.add('sqlnb-filter-input-error');
+            setTimeout(() => filterInput.classList.remove('sqlnb-filter-input-error'), 600);
+            return;
+        }
+        if (!msg.command) {
+            // No query stored — can't filter
+            const aggBar = root.querySelector('.sqlnb-agg-bar') as HTMLElement;
+            if (aggBar) {
+                aggBar.innerHTML = '<span style="color:var(--danger);font-size:12px;">No query to filter — run the cell first</span>';
+            }
+            return;
+        }
+        activeFilters.set(idx, expr);
+        // Show loading state
+        const aggBar = root.querySelector('.sqlnb-agg-bar') as HTMLElement;
+        if (aggBar) {
+            aggBar.innerHTML = SPINNER_SVG + ' <span style="color:var(--text-muted)">Filtering…</span>';
+        }
+        filterInput.classList.add('sqlnb-filter-input-active');
+        filterInput.classList.remove('sqlnb-filter-input-error');
+        if (clearBtn) clearBtn.style.display = 'flex';
+        // Show badge
+        if (!root.querySelector('.sqlnb-filter-active-badge')) {
+            const badge = document.createElement('span') as HTMLSpanElement;
+            badge.className = 'sqlnb-filter-active-badge';
+            badge.textContent = 'FILTERED';
+            const bar = filterInput.closest('.sqlnb-filter-bar');
+            if (bar) bar.appendChild(badge);
+        }
+        window.vscode.postMessage({
+            type: 'execute-filter',
+            cellIndex: idx,
+            query: msg.command,
+            filterExpr: expr
+        });
+    }
+
+    function clearFilter() {
+        activeFilters.delete(idx);
+        filterInput.value = '';
+        filterInput.classList.remove('sqlnb-filter-input-active');
+        filterInput.classList.remove('sqlnb-filter-input-error');
+        if (clearBtn) clearBtn.style.display = 'none';
+        // Remove badge
+        const badge = root.querySelector('.sqlnb-filter-active-badge');
+        if (badge) badge.remove();
+        if (!msg.command) {
+            // No original query — just clear UI state, nothing to re-execute
+            return;
+        }
+        // Show loading state
+        const aggBar = root.querySelector('.sqlnb-agg-bar') as HTMLElement;
+        if (aggBar) {
+            aggBar.innerHTML = SPINNER_SVG + ' <span style="color:var(--text-muted)">Removing filter…</span>';
+        }
+        // Re-execute original query
+        window.vscode.postMessage({
+            type: 'execute-filter',
+            cellIndex: idx,
+            query: msg.command,
+            filterExpr: ''
+        });
+    }
+
+    // Enter to apply, Escape to clear
+    filterInput.addEventListener('keydown', (e: KeyboardEvent) => {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            applyFilter();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            if (filterInput.value.trim()) {
+                clearFilter();
+            } else {
+                filterInput.blur();
+            }
+        }
+        // Stop propagation so table keydown doesn't fire
+        e.stopPropagation();
+    });
+
+    // Prevent clicks in filter bar from clearing table selection
+    const filterBar = root.querySelector('.sqlnb-filter-bar');
+    if (filterBar) {
+        filterBar.addEventListener('mousedown', (e: any) => e.stopPropagation());
+        filterBar.addEventListener('click', (e: any) => e.stopPropagation());
+    }
+
+    if (applyBtn) {
+        applyBtn.addEventListener('click', (e: any) => {
+            e.stopPropagation();
+            applyFilter();
+        });
+    }
+
+    if (clearBtn) {
+        clearBtn.addEventListener('click', (e: any) => {
+            e.stopPropagation();
+            clearFilter();
+        });
+    }
+
+    // Restore active state styling if filter was previously set
+    if (activeFilters.has(idx)) {
+        filterInput.classList.add('sqlnb-filter-input-active');
     }
 }

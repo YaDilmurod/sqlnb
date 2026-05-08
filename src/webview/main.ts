@@ -1094,6 +1094,68 @@ window.addEventListener('message', event => {
     }
   }
 
+  if (msg.type === 'filter-result') {
+    const idx = msg.cellIndex;
+    if (idx == null || !cells[idx]) return;
+
+    if (msg.error) {
+      // Show the error inline in the filter bar area rather than replacing the whole table
+      const root = document.getElementById(`sqlnb-advanced-table-${idx}`);
+      if (root) {
+        const aggBar = root.querySelector('.sqlnb-agg-bar') as HTMLElement;
+        if (aggBar) {
+          aggBar.innerHTML = `<span style="color:var(--danger);font-size:12px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
+            Filter error: ${escapeHtml(msg.error)}
+          </span>`;
+        }
+        // Highlight filter input as errored
+        const filterInput = root.querySelector(`[data-filter-input="${idx}"]`) as HTMLInputElement;
+        if (filterInput) {
+          filterInput.classList.add('sqlnb-filter-input-error');
+          // Remove error class on next input
+          filterInput.addEventListener('input', () => filterInput.classList.remove('sqlnb-filter-input-error'), { once: true });
+        }
+      }
+    } else if (msg.rows && msg.rows.length > 0) {
+      // Re-render table with filtered data, preserving the original command
+      let outputHtml = '<div class="output-area">';
+      outputHtml += renderAdvancedTableHtml(idx, msg, escapeHtml);
+      outputHtml += '</div>';
+      cells[idx]._output = outputHtml;
+      cells[idx]._outputData = msg;
+      const outputEl = document.getElementById('output-' + idx);
+      if (outputEl) {
+        outputEl.innerHTML = outputHtml;
+        setTimeout(() => setupAdvancedTableListeners(idx, msg, escapeHtml), 0);
+      }
+    } else {
+      // Filter returned 0 rows — show empty state with filter bar preserved
+      const filterExpr = msg.filterExpr || '';
+      const ms = msg.elapsedMs ? formatElapsed(msg.elapsedMs) : '';
+      const root = document.getElementById(`sqlnb-advanced-table-${idx}`);
+      if (root) {
+        // Update only the table body and agg bar, keep filter bar intact
+        const tableContainer = root.querySelector('.sqlnb-table-container');
+        if (tableContainer) {
+          const tbody = tableContainer.querySelector('tbody');
+          if (tbody) tbody.innerHTML = '';
+        }
+        const aggBar = root.querySelector('.sqlnb-agg-bar') as HTMLElement;
+        if (aggBar) {
+          if (filterExpr) {
+            aggBar.innerHTML = `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-2px;margin-right:4px"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+              No rows match the filter — ${ms}
+            </span>`;
+          } else {
+            aggBar.innerHTML = `<span style="color:var(--text-muted);font-style:italic;font-size:12px;">0 rows — ${ms}</span>`;
+          }
+        }
+      }
+    }
+  }
+
   if (msg.type === 'preview-table-result') {
     const content = document.getElementById('table-preview-content');
     if (content) {

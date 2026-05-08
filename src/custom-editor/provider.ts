@@ -180,6 +180,34 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           webviewPanel.webview.postMessage({ type: 'sql-result', cellIndex: msg.cellIndex, ...result, command: msg.query, currentSort: { column: msg.column, direction: msg.direction } });
           break;
         }
+        case 'execute-filter': {
+          if (!session.driver || !session.driver.isConnected()) {
+            webviewPanel.webview.postMessage({ type: 'filter-result', cellIndex: msg.cellIndex, error: 'Not connected' });
+            break;
+          }
+          if (!msg.query) {
+            webviewPanel.webview.postMessage({ type: 'filter-result', cellIndex: msg.cellIndex, error: 'No query to filter — run the cell first' });
+            break;
+          }
+          const baseQuery = msg.query.trim().replace(/;+$/, '');
+          let filterQuery: string;
+          if (msg.filterExpr && msg.filterExpr.trim()) {
+            // Wrap the original query as a subquery and apply WHERE
+            filterQuery = `SELECT * FROM (\n${baseQuery}\n) AS _sqlnb_filtered WHERE ${msg.filterExpr}`;
+          } else {
+            // No filter — re-run original
+            filterQuery = baseQuery;
+          }
+          const filterResult = await this.executeQuery(session, filterQuery);
+          webviewPanel.webview.postMessage({
+            type: 'filter-result',
+            cellIndex: msg.cellIndex,
+            ...filterResult,
+            command: msg.query, // preserve original query for subsequent filter/sort
+            filterExpr: msg.filterExpr || ''
+          });
+          break;
+        }
         case 'profile-column': {
           if (!session.driver || !session.driver.isConnected()) {
             break;
