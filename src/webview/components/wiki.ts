@@ -12,39 +12,39 @@ export function renderWiki(driverType: string): string {
     {
       title: 'String Functions',
       items: [
-        { name: 'CONCAT', syntax: "CONCAT('A', 'B')", desc: 'Concatenates two or more strings.', example: "SELECT CONCAT('Hello', ' ', 'World');" },
-        { name: 'LENGTH', syntax: "LENGTH(string)", desc: 'Returns the number of characters in a string.', example: "SELECT LENGTH('Hello');" },
-        { name: 'LOWER / UPPER', syntax: "LOWER(string)", desc: 'Converts a string to lower or upper case.', example: "SELECT LOWER('HELLO');" },
-        { name: 'SUBSTRING', syntax: "SUBSTRING('Hello' FROM 1 FOR 4)", desc: 'Extracts a substring.', example: "SELECT SUBSTRING('Database' FROM 1 FOR 4);" },
-        { name: 'REPLACE', syntax: "REPLACE('Hello', 'l', 'w')", desc: 'Replaces all occurrences in string.', example: "SELECT REPLACE('Hello World', 'World', 'Postgres');" }
+        { name: 'CONCAT', syntax: "CONCAT('A', 'B')", desc: 'Concatenates two or more strings.', example: "SELECT CONCAT('Hello', ' ', 'World');\n-- 'Hello World'" },
+        { name: 'LENGTH', syntax: "LENGTH(string)", desc: 'Returns the number of characters in a string.', example: "SELECT LENGTH('Hello');\n-- 5" },
+        { name: 'LOWER / UPPER', syntax: "LOWER(string)", desc: 'Converts a string to lower or upper case.', example: "SELECT LOWER('HELLO');\n-- 'hello'" },
+        { name: 'SUBSTRING', syntax: "SUBSTRING('Hello' FROM 1 FOR 4)", desc: 'Extracts a substring.', example: "SELECT SUBSTRING('Database' FROM 1 FOR 4);\n-- 'Data'" },
+        { name: 'REPLACE', syntax: "REPLACE('Hello', 'l', 'w')", desc: 'Replaces all occurrences in string.', example: "SELECT REPLACE('Hello World', 'World', 'Postgres');\n-- 'Hello Postgres'" }
       ]
     },
     {
       title: 'Date/Time Functions',
       items: [
-        { name: 'CURRENT_DATE', syntax: 'CURRENT_DATE', desc: 'Returns the current date.', example: "SELECT CURRENT_DATE;" },
-        { name: 'NOW()', syntax: 'NOW()', desc: 'Returns current date and time.', example: "SELECT NOW();" },
-        { name: 'DATE_TRUNC', syntax: "DATE_TRUNC('month', timestamp)", desc: 'Truncate timestamp to precision.', example: "SELECT DATE_TRUNC('month', NOW());" },
-        { name: 'EXTRACT', syntax: "EXTRACT(field FROM source)", desc: 'Extracts subfields such as year or hour from date/time values.', example: "SELECT EXTRACT(year FROM NOW());" },
-        { name: 'AGE', syntax: "AGE(timestamp, timestamp)", desc: 'Subtract arguments, producing a "symbolic" result that uses years and months.', example: "SELECT AGE(TIMESTAMP '2001-04-10', TIMESTAMP '1957-06-13');" }
+        { name: 'CURRENT_DATE', syntax: 'CURRENT_DATE', desc: 'Returns the current date.', example: "SELECT CURRENT_DATE;\n-- '2024-05-12'" },
+        { name: 'NOW()', syntax: 'NOW()', desc: 'Returns current date and time.', example: "SELECT NOW();\n-- '2024-05-12 17:05:00+00'" },
+        { name: 'DATE_TRUNC', syntax: "DATE_TRUNC('month', timestamp)", desc: 'Truncate timestamp to precision.', example: "SELECT DATE_TRUNC('month', NOW());\n-- '2024-05-01 00:00:00+00'" },
+        { name: 'EXTRACT', syntax: "EXTRACT(field FROM source)", desc: 'Extracts subfields such as year or hour from date/time values.', example: "SELECT EXTRACT(year FROM NOW());\n-- 2024" },
+        { name: 'AGE', syntax: "AGE(timestamp, timestamp)", desc: 'Subtract arguments, producing a "symbolic" result that uses years and months.', example: "SELECT AGE(TIMESTAMP '2001-04-10', TIMESTAMP '1957-06-13');\n-- '43 years 9 mons 27 days'" }
       ]
     },
     {
       title: 'Numeric Functions',
       items: [
-        { name: 'ABS', syntax: "ABS(numeric)", desc: 'Absolute value.', example: "SELECT ABS(-17.4);" },
-        { name: 'ROUND', syntax: "ROUND(numeric, integer)", desc: 'Round to nearest integer or to given decimal places.', example: "SELECT ROUND(42.4382, 2);" },
-        { name: 'CEIL / FLOOR', syntax: "CEIL(numeric)", desc: 'Nearest integer greater/less than or equal to argument.', example: "SELECT CEIL(42.8);" },
-        { name: 'RANDOM', syntax: "RANDOM()", desc: 'Random value in the range 0.0 <= x < 1.0.', example: "SELECT RANDOM();" }
+        { name: 'ABS', syntax: "ABS(numeric)", desc: 'Absolute value.', example: "SELECT ABS(-17.4);\n-- 17.4" },
+        { name: 'ROUND', syntax: "ROUND(numeric, integer)", desc: 'Round to nearest integer or to given decimal places.', example: "SELECT ROUND(42.4382, 2);\n-- 42.44" },
+        { name: 'CEIL / FLOOR', syntax: "CEIL(numeric)", desc: 'Nearest integer greater/less than or equal to argument.', example: "SELECT CEIL(42.8);\n-- 43" },
+        { name: 'RANDOM', syntax: "RANDOM()", desc: 'Random value in the range 0.0 <= x < 1.0.', example: "SELECT RANDOM();\n-- 0.823901" }
       ]
     },
     {
       title: 'Aggregations',
       items: [
-        { name: 'COUNT', syntax: 'COUNT(col)', desc: 'Number of input rows.', example: "SELECT COUNT(*) FROM users;" },
-        { name: 'STRING_AGG', syntax: "STRING_AGG(col, ', ')", desc: 'Concatenates values into a string.', example: "SELECT STRING_AGG(name, ', ') FROM users;" },
-        { name: 'ARRAY_AGG', syntax: 'ARRAY_AGG(col)', desc: 'Input values, including nulls, concatenated into an array.', example: "SELECT ARRAY_AGG(id) FROM users;" },
-        { name: 'COALESCE', syntax: 'COALESCE(val1, val2, ...)', desc: 'Returns first non-null value.', example: "SELECT COALESCE(description, 'No description') FROM items;" }
+        { name: 'COUNT', syntax: 'COUNT(col)', desc: 'Number of input rows.', example: "SELECT COUNT(*) FROM users;\n-- 150" },
+        { name: 'STRING_AGG', syntax: "STRING_AGG(col, ', ')", desc: 'Concatenates values into a string.', example: "SELECT STRING_AGG(name, ', ') FROM users;\n-- 'Alice, Bob, Charlie'" },
+        { name: 'ARRAY_AGG', syntax: 'ARRAY_AGG(col)', desc: 'Input values, including nulls, concatenated into an array.', example: "SELECT ARRAY_AGG(id) FROM users;\n-- {1, 2, 3}" },
+        { name: 'COALESCE', syntax: 'COALESCE(val1, val2, ...)', desc: 'Returns first non-null value.', example: "SELECT COALESCE(description, 'No description') FROM items;\n-- 'No description'" }
       ]
     }
   ] : [
