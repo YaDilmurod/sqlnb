@@ -1074,14 +1074,16 @@ const PREVIEW_TABLE_IDX = 99999;
 // ── Global keyboard shortcut guard for input fields ──
 // VS Code webview can intercept Cmd+A/Z/X/C/V before they reach input elements.
 // This capture-phase listener ensures native input shortcuts work correctly
-// whenever a text input or textarea has focus.
+// whenever a text input, textarea, or Monaco editor has focus.
 document.addEventListener('keydown', (e: KeyboardEvent) => {
   const el = document.activeElement;
   if (!el) return;
   const tag = el.tagName?.toLowerCase();
   const isInput = tag === 'input' || tag === 'textarea';
-  if (!isInput) return;
-  // Let Cmd/Ctrl shortcuts pass through natively to the focused input
+  // Monaco uses a hidden textarea with class 'inputarea' inside .monaco-editor
+  const isMonaco = !!el.closest?.('.monaco-editor');
+  if (!isInput && !isMonaco) return;
+  // Let Cmd/Ctrl shortcuts pass through natively to the focused element
   if ((e.metaKey || e.ctrlKey) && ['a', 'c', 'v', 'x', 'z'].includes(e.key.toLowerCase())) {
     e.stopPropagation(); // prevent VS Code / parent handlers from intercepting
     // Do NOT preventDefault — let the browser handle the native action

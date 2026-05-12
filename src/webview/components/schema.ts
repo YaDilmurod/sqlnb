@@ -1,4 +1,5 @@
 import { formatElapsed, SPINNER_SVG } from './ui-utils';
+import { renderErd } from './erd-renderer';
 
 declare const window: any;
 declare const document: any;
@@ -222,49 +223,39 @@ export function handleSchemaLoadResult(msg: any, escapeHtml: (s: any) => string)
             (erdContainer as HTMLElement).style.display = 'block';
 
             if (!(erdContainer as HTMLElement).hasAttribute('data-rendered')) {
-                (erdContainer as HTMLElement).innerHTML = '<div style="color:var(--text-muted);">' + SPINNER_SVG + ' Generating ERD...</div>';
-                
-                // Generate Mermaid syntax
-                let m = 'erDiagram\n';
+                (erdContainer as HTMLElement).innerHTML = '<div style="color:var(--text-muted);padding:16px;display:flex;align-items:center;gap:8px;">' + SPINNER_SVG + ' Generating ERD...</div>';
+
+                // Prepare ERD data
                 const fks = (window as any)?._sqlnbConstraints?.foreignKeys || [];
-                
-                const validTables = new Set<string>();
-                for (const t of tables) {
-                    if (t.tableType !== 'table') continue;
-                    const safeTableName = t.name.replace(/[^a-zA-Z0-9_]/g, '_');
-                    validTables.add(t.schema + '.' + t.name);
-                    m += `  ${safeTableName} {\n`;
-                    for (const c of t.columns) {
-                        const safeColName = c.name.replace(/[^a-zA-Z0-9_]/g, '_');
-                        let safeType = c.dataType.replace(/[^a-zA-Z0-9_]/g, '_');
-                        if (safeType.length > 20) safeType = safeType.substring(0, 20);
-                        const pk = c.isPrimaryKey ? ' PK' : '';
-                        m += `    ${safeType} ${safeColName}${pk}\n`;
-                    }
-                    m += `  }\n`;
-                }
+                const erdTables = tables.map(t => ({
+                    schema: t.schema,
+                    name: t.name,
+                    tableType: t.tableType,
+                    columns: t.columns.map(c => ({
+                        name: c.name,
+                        dataType: c.dataType,
+                        isPrimaryKey: c.isPrimaryKey,
+                        isNullable: c.isNullable,
+                    })),
+                }));
+                const erdFks = fks.map((fk: any) => ({
+                    sourceSchema: fk.sourceSchema,
+                    sourceTable: fk.sourceTable,
+                    sourceColumn: fk.sourceColumn,
+                    targetSchema: fk.targetSchema,
+                    targetTable: fk.targetTable,
+                    targetColumn: fk.targetColumn,
+                }));
 
-                for (const fk of fks) {
-                    if (validTables.has(fk.sourceSchema + '.' + fk.sourceTable) && validTables.has(fk.targetSchema + '.' + fk.targetTable)) {
-                        const srcTable = fk.sourceTable.replace(/[^a-zA-Z0-9_]/g, '_');
-                        const tgtTable = fk.targetTable.replace(/[^a-zA-Z0-9_]/g, '_');
-                        m += `  ${tgtTable} ||--o{ ${srcTable} : "${fk.sourceColumn}"\n`;
-                    }
-                }
-
-                try {
-                    const mermaid = (window as any).mermaid;
-                    if (mermaid) {
-                        mermaid.initialize({ startOnLoad: false, theme: 'default' });
-                        const { svg } = await mermaid.render('erd-graph-' + idx, m);
-                        (erdContainer as HTMLElement).innerHTML = svg;
+                // Use requestAnimationFrame so the spinner shows before heavy rendering
+                requestAnimationFrame(() => {
+                    try {
+                        renderErd(erdTables, erdFks, erdContainer as HTMLElement);
                         (erdContainer as HTMLElement).setAttribute('data-rendered', 'true');
-                    } else {
-                        (erdContainer as HTMLElement).innerHTML = '<div style="color:var(--danger);">Mermaid.js failed to load.</div>';
+                    } catch (err: any) {
+                        (erdContainer as HTMLElement).innerHTML = '<div style="color:var(--danger);padding:16px;">' + escapeHtml(err.message || String(err)) + '</div>';
                     }
-                } catch (err: any) {
-                    (erdContainer as HTMLElement).innerHTML = '<div style="color:var(--danger); text-align: left;"><pre>' + escapeHtml(err.message || String(err)) + '</pre></div>';
-                }
+                });
             }
         });
     }

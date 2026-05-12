@@ -2,8 +2,10 @@ import { defaultProfilerViewBuilder } from './profiler-view';
 import { SPINNER_SVG, formatElapsed, exportButtonsHtml, formatNumber, oidToType } from './ui-utils';
 import { isPrimaryKey, getForeignKeyInfo, requestFkPreview } from './fk-preview';
 
-// SVG icon for FK cell link (no emojis per RULES.md)
+// SVG icons (no emojis per RULES.md)
 const FK_LINK_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></svg>';
+const COPY_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+const CHECK_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>';
 
 declare const window: any;
 declare const document: any;
@@ -140,7 +142,8 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
             const fkLink = cellFk
                 ? `<span class="sqlnb-fk-cell-link" data-fk-schema="${escapeHtml(cellFk.targetSchema)}" data-fk-table="${escapeHtml(cellFk.targetTable)}" data-fk-column="${escapeHtml(cellFk.targetColumn)}" data-fk-value="${escapeHtml(rawVal)}" title="Open ${escapeHtml(cellFk.targetTable)} → ${escapeHtml(cellFk.targetColumn)}">${FK_LINK_ICON}</span>`
                 : '';
-            return `<td class="sqlnb-cell${cellFk ? ' sqlnb-fk-cell' : ''}" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);font-family:var(--font-mono);font-size:13px;background:${bg};color:var(--text-main);position:relative;${stickyStyle}" title="${escapeHtml(str)}">${escapeHtml(display)}${fkLink}</td>`;
+            const copyLink = `<span class="sqlnb-copy-cell-link" data-copy-val="${escapeHtml(rawVal)}" title="Copy to clipboard">${COPY_ICON}</span>`;
+            return `<td class="sqlnb-cell${cellFk ? ' sqlnb-fk-cell' : ''}" data-row="${i}" data-col="${escapeHtml(h)}" data-val="${escapeHtml(rawVal)}" style="padding:4px 12px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);font-family:var(--font-mono);font-size:13px;background:${bg};color:var(--text-main);position:relative;${stickyStyle}" title="${escapeHtml(str)}">${escapeHtml(display)}${copyLink}${fkLink}</td>`;
         }).join('');
         return `<tr><td class="sqlnb-rownum" style="padding:4px 8px;border-bottom:1px solid var(--border-color);border-right:1px solid var(--border-color);background:${bg};color:var(--text-subtle);font-size:11px;text-align:right;user-select:none;min-width:36px;">${i + 1}</td>${cellsHtml}</tr>`;
     }).join('');
@@ -160,6 +163,11 @@ export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: a
       .sqlnb-sort-item-reset:hover { background:var(--danger-light); }
       .sqlnb-sort-divider { height:1px; background:var(--border-color); margin:4px 0; }
       .sqlnb-cell { cursor:cell; user-select:none; transition:background .05s; }
+      .sqlnb-copy-cell-link { display:none; cursor:pointer; position:absolute; right:4px; top:50%; transform:translateY(-50%); padding:2px 4px; border-radius:3px; background:var(--bg-surface-inset); color:var(--text-muted); border:1px solid var(--border-color); transition:all .12s; line-height:1; z-index:2; align-items:center; justify-content:center; }
+      .sqlnb-cell:hover .sqlnb-copy-cell-link { display:inline-flex; }
+      .sqlnb-fk-cell:hover .sqlnb-copy-cell-link { right:26px; }
+      .sqlnb-copy-cell-link:hover { background:var(--primary); color:#fff; border-color:var(--primary); }
+      .sqlnb-copy-cell-link.sqlnb-copy-done { background:var(--success); color:#fff; border-color:var(--success); }
       .sqlnb-cell-selected { outline:2px solid var(--primary) !important; outline-offset:-2px; background:var(--primary-light) !important; }
       .sqlnb-profile-popup { position:absolute; top:100%; left:0; z-index:51; background:var(--bg-surface); border:1px solid var(--border-color); border-radius:6px; box-shadow:0 10px 25px rgba(0,0,0,0.15); padding:0; min-width:300px; font-weight:400; text-align:left; white-space:normal; cursor:default; }
       .sqlnb-profile-popup table { width:100%; font-size:12px; margin-bottom:0 !important; }
@@ -290,6 +298,40 @@ export function setupAdvancedTableListeners(idx: number, msg: any, escapeHtml: (
             if (schema && table && column && value !== undefined) {
                 requestFkPreview(schema, table, column, value);
             }
+        }, { signal });
+    });
+
+    // Copy cell link click → copy value to clipboard
+    root.querySelectorAll('.sqlnb-copy-cell-link').forEach((link: any) => {
+        link.addEventListener('click', (e: any) => {
+            e.stopPropagation();
+            e.preventDefault();
+            const val = link.dataset.copyVal ?? '';
+            navigator.clipboard.writeText(val).then(() => {
+                // Brief visual confirmation
+                link.classList.add('sqlnb-copy-done');
+                link.innerHTML = CHECK_ICON;
+                setTimeout(() => {
+                    link.classList.remove('sqlnb-copy-done');
+                    link.innerHTML = COPY_ICON;
+                }, 800);
+            }).catch(() => {
+                // Fallback
+                const ta = document.createElement('textarea');
+                ta.value = val;
+                ta.style.position = 'fixed';
+                ta.style.left = '-9999px';
+                document.body.appendChild(ta);
+                ta.select();
+                document.execCommand('copy');
+                document.body.removeChild(ta);
+                link.classList.add('sqlnb-copy-done');
+                link.innerHTML = CHECK_ICON;
+                setTimeout(() => {
+                    link.classList.remove('sqlnb-copy-done');
+                    link.innerHTML = COPY_ICON;
+                }, 800);
+            });
         }, { signal });
     });
 

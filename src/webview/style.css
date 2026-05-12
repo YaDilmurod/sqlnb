@@ -1403,3 +1403,82 @@ button[disabled] {
   color: #fff;
   border-color: var(--primary);
 }
+
+/* ── ERD View ── */
+:root {
+  --erd-table-bg: var(--bg-surface);
+  --erd-table-border: var(--border-color);
+  --erd-header-bg: var(--bg-surface-hover);
+  --erd-header-text: var(--text-main);
+  --erd-col-text: var(--text-main);
+  --erd-type-text: var(--primary);
+  --erd-null-text: var(--text-subtle);
+  --erd-row-alt: var(--bg-surface-inset);
+  --erd-rel-color: var(--text-muted);
+  --erd-shadow: #000;
+}
+
+.erd-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 10px;
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm) var(--border-radius-sm) 0 0;
+}
+
+.erd-tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.erd-tool-btn:hover {
+  background: var(--primary-light);
+  border-color: var(--primary);
+  color: var(--primary);
+}
+
+.erd-zoom-label {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 4px;
+  font-family: var(--font-mono);
+  min-width: 36px;
+}
+
+.erd-viewport {
+  overflow: hidden;
+  cursor: grab;
+  background:
+    radial-gradient(circle, var(--border-color) 1px, transparent 1px);
+  background-size: 20px 20px;
+  min-height: 350px;
+  max-height: 600px;
+  position: relative;
+}
+
+.erd-viewport:active {
+  cursor: grabbing;
+}
+
+.erd-canvas {
+  transform-origin: 0 0;
+  will-change: transform;
+  transition: none;
+}
+
+.erd-canvas svg {
+  display: block;
+}
+
