@@ -349,6 +349,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
               fields: fkResult.fields,
               rows: fkResult.rows,
               elapsedMs: performance.now() - fkStart,
+              command: fkQuery
             });
           } catch (err: any) {
             webviewPanel.webview.postMessage({
@@ -356,6 +357,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
               error: err.message,
               tableName: fkTable,
               elapsedMs: performance.now() - fkStart,
+              command: fkQuery
             });
           }
           break;

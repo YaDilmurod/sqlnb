@@ -1,15 +1,14 @@
 /**
- * Custom SVG-based ERD (Entity Relationship Diagram) renderer.
- * Replaces Mermaid.js with a self-contained, zero-dependency solution
- * that works reliably inside VS Code webviews.
+ * Custom HTML/SVG hybrid ERD (Entity Relationship Diagram) renderer.
+ * Replaces static SVG with an interactive HTML canvas.
  *
  * Features:
  *   - Auto-layout with grid placement
- *   - FK relationship lines with cardinality markers
+ *   - Draggable HTML tables
+ *   - Dynamic SVG FK relationship lines that update on drag
  *   - Pan & zoom via mouse drag / scroll
  *   - PK / FK / NULL badges per column
- *   - Dark/light theme aware via CSS variables
- *   - Handles special characters in table/column names
+ *   - Hover effects for tables
  */
 
 declare const document: any;
@@ -51,19 +50,19 @@ interface TableBox {
 
 // ── Constants ──
 
-const COL_HEIGHT = 22;
+const COL_HEIGHT = 24;
 const HEADER_HEIGHT = 32;
-const TABLE_PADDING_X = 14;
+const TABLE_PADDING_X = 12;
 const TABLE_MIN_WIDTH = 180;
 const TABLE_MAX_WIDTH = 300;
-const GRID_GAP_X = 80;
-const GRID_GAP_Y = 50;
-const CHAR_WIDTH = 7.2; // approximate monospace char width at 11px
+const GRID_GAP_X = 100;
+const GRID_GAP_Y = 60;
+const CHAR_WIDTH = 7.5; // approximate monospace char width at 11px
 
-// ── SVG helpers ──
+// ── Helpers ──
 
-function svgEscape(s: string): string {
-  return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+function escapeHtml(s: string): string {
+  return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
 function measureTextWidth(text: string): number {
@@ -80,11 +79,11 @@ function computeTableBox(table: ErdTable): { width: number; height: number } {
   let maxLineWidth = measureTextWidth(table.name) + 40; // header with icon space
   for (const col of table.columns) {
     const badges = (col.isPrimaryKey ? 3 : 0) + (col.isForeignKey ? 3 : 0) + (col.isNullable ? 5 : 0);
-    const lineW = measureTextWidth(col.name) + measureTextWidth(truncate(col.dataType, 15)) + badges * CHAR_WIDTH + TABLE_PADDING_X * 2 + 30;
+    const lineW = measureTextWidth(col.name) + measureTextWidth(truncate(col.dataType, 15)) + badges * CHAR_WIDTH + TABLE_PADDING_X * 2 + 40;
     if (lineW > maxLineWidth) maxLineWidth = lineW;
   }
   const width = Math.min(TABLE_MAX_WIDTH, Math.max(TABLE_MIN_WIDTH, Math.ceil(maxLineWidth)));
-  const height = HEADER_HEIGHT + table.columns.length * COL_HEIGHT + 6;
+  const height = HEADER_HEIGHT + table.columns.length * COL_HEIGHT;
   return { width, height };
 }
 
@@ -96,7 +95,6 @@ function gridLayout(tables: ErdTable[], fks: FkRelation[]): TableBox[] {
     return { table: t, x: 0, y: 0, width, height };
   });
 
-  // Build adjacency for connected-component ordering
   const nameToIdx = new Map<string, number>();
   boxes.forEach((b, i) => nameToIdx.set(b.table.name, i));
 
@@ -112,11 +110,9 @@ function gridLayout(tables: ErdTable[], fks: FkRelation[]): TableBox[] {
     }
   }
 
-  // BFS ordering to place connected tables near each other
   const visited = new Set<number>();
   const ordered: number[] = [];
 
-  // Start with tables that have the most connections
   const sortedStarts = Array.from({ length: boxes.length }, (_, i) => i)
     .sort((a, b) => (adj.get(b)?.size || 0) - (adj.get(a)?.size || 0));
 
@@ -139,31 +135,24 @@ function gridLayout(tables: ErdTable[], fks: FkRelation[]): TableBox[] {
     }
   }
 
-  // Grid placement
   const cols = Math.max(1, Math.ceil(Math.sqrt(boxes.length * 1.5)));
-  let curX = 40;
-  let curY = 40;
+  let curX = 60;
+  let curY = 60;
   let colIdx = 0;
   let rowMaxHeight = 0;
   const colWidths: number[] = new Array(cols).fill(0);
 
-  // First pass: determine column widths
   for (let i = 0; i < ordered.length; i++) {
     const c = i % cols;
     const b = boxes[ordered[i]];
     if (b.width > colWidths[c]) colWidths[c] = b.width;
   }
 
-  curX = 40;
-  curY = 40;
-  colIdx = 0;
-  rowMaxHeight = 0;
-
   for (let i = 0; i < ordered.length; i++) {
     const b = boxes[ordered[i]];
     if (colIdx >= cols) {
       colIdx = 0;
-      curX = 40;
+      curX = 60;
       curY += rowMaxHeight + GRID_GAP_Y;
       rowMaxHeight = 0;
     }
@@ -191,7 +180,7 @@ function getColumnAnchor(box: TableBox, colName: string, side: 'left' | 'right')
 
 function buildRelationshipPath(src: AnchorPoint, tgt: AnchorPoint): string {
   const dx = Math.abs(tgt.x - src.x);
-  const offset = Math.max(30, dx * 0.35);
+  const offset = Math.max(30, dx * 0.4);
 
   const sx = src.side === 'right' ? src.x + 2 : src.x - 2;
   const tx = tgt.side === 'right' ? tgt.x + 2 : tgt.x - 2;
@@ -201,8 +190,6 @@ function buildRelationshipPath(src: AnchorPoint, tgt: AnchorPoint): string {
 
   return `M ${sx} ${src.y} C ${sc} ${src.y}, ${tc} ${tgt.y}, ${tx} ${tgt.y}`;
 }
-
-// ── One-to-many markers ──
 
 function oneMarker(x: number, y: number, side: 'left' | 'right'): string {
   const dir = side === 'right' ? 1 : -1;
@@ -217,6 +204,8 @@ function manyMarker(x: number, y: number, side: 'left' | 'right'): string {
     `<line x1="${bx}" y1="${y}" x2="${bx + dir * 8}" y2="${y}" stroke="var(--erd-rel-color)" stroke-width="1.5"/>`;
 }
 
+let erdAbortController: AbortController | null = null;
+
 // ── Main render ──
 
 export function renderErd(
@@ -224,14 +213,19 @@ export function renderErd(
   foreignKeys: FkRelation[],
   container: HTMLElement
 ): void {
-  // Filter to base tables only for cleaner ERD
+  if (erdAbortController) {
+    erdAbortController.abort();
+  }
+  erdAbortController = new AbortController();
+  const signal = erdAbortController.signal;
+
   const baseTables = tables.filter(t => t.tableType === 'table');
   if (baseTables.length === 0) {
     container.innerHTML = '<div style="color:var(--text-muted);padding:24px;text-align:center;font-style:italic;">No base tables found to render ERD.</div>';
     return;
   }
 
-  // Mark FK columns
+
   const tableNames = new Set(baseTables.map(t => t.name));
   const validFks = foreignKeys.filter(fk => tableNames.has(fk.sourceTable) && tableNames.has(fk.targetTable));
 
@@ -246,121 +240,69 @@ export function renderErd(
     }
   }
 
-  // Layout
   const boxes = gridLayout(baseTables, validFks);
-  const nameToBox = new Map<string, TableBox>();
-  boxes.forEach(b => nameToBox.set(b.table.name, b));
-
-  // Compute SVG dimensions
-  let maxX = 0, maxY = 0;
-  for (const b of boxes) {
-    const r = b.x + b.width;
-    const bot = b.y + b.height;
-    if (r > maxX) maxX = r;
-    if (bot > maxY) maxY = bot;
-  }
-  const svgW = maxX + 80;
-  const svgH = maxY + 80;
-
-  // Build SVG
-  let svg = '';
-
-  // ── Relationship lines (drawn first, behind tables) ──
-  for (const fk of validFks) {
-    const srcBox = nameToBox.get(fk.sourceTable);
-    const tgtBox = nameToBox.get(fk.targetTable);
-    if (!srcBox || !tgtBox) continue;
-
-    // Decide which side to connect from
-    const srcCenterX = srcBox.x + srcBox.width / 2;
-    const tgtCenterX = tgtBox.x + tgtBox.width / 2;
-    const srcSide: 'left' | 'right' = srcCenterX < tgtCenterX ? 'right' : 'left';
-    const tgtSide: 'left' | 'right' = srcSide === 'right' ? 'left' : 'right';
-
-    const src = getColumnAnchor(srcBox, fk.sourceColumn, srcSide);
-    const tgt = getColumnAnchor(tgtBox, fk.targetColumn, tgtSide);
-
-    const path = buildRelationshipPath(src, tgt);
-    svg += `<path d="${path}" fill="none" stroke="var(--erd-rel-color)" stroke-width="1.5" stroke-dasharray="none" opacity="0.7"/>`;
-    // One (target/PK side) and Many (source/FK side) markers
-    svg += oneMarker(tgt.x, tgt.y, tgtSide);
-    svg += manyMarker(src.x, src.y, srcSide);
-  }
-
-  // ── Table boxes ──
-  for (const box of boxes) {
-    const { table, x, y, width, height } = box;
-
-    // Shadow
-    svg += `<rect x="${x + 2}" y="${y + 2}" width="${width}" height="${height}" rx="6" fill="var(--erd-shadow)" opacity="0.15"/>`;
-
-    // Box background
-    svg += `<rect x="${x}" y="${y}" width="${width}" height="${height}" rx="6" fill="var(--erd-table-bg)" stroke="var(--erd-table-border)" stroke-width="1"/>`;
-
-    // Header background
-    svg += `<rect x="${x}" y="${y}" width="${width}" height="${HEADER_HEIGHT}" rx="6" fill="var(--erd-header-bg)"/>`;
-    svg += `<rect x="${x}" y="${y + HEADER_HEIGHT - 6}" width="${width}" height="6" fill="var(--erd-header-bg)"/>`;
-
-    // Header separator
-    svg += `<line x1="${x}" y1="${y + HEADER_HEIGHT}" x2="${x + width}" y2="${y + HEADER_HEIGHT}" stroke="var(--erd-table-border)" stroke-width="1"/>`;
-
-    // Table name
-    const displayName = truncate(table.name, 28);
-    svg += `<text x="${x + TABLE_PADDING_X}" y="${y + 21}" font-size="13" font-weight="700" fill="var(--erd-header-text)" font-family="var(--font-mono)">${svgEscape(displayName)}</text>`;
-
-    // Columns
-    for (let i = 0; i < table.columns.length; i++) {
-      const col = table.columns[i];
-      const cy = y + HEADER_HEIGHT + i * COL_HEIGHT;
-
-      // Alternating row background
-      if (i % 2 === 1) {
-        svg += `<rect x="${x + 1}" y="${cy}" width="${width - 2}" height="${COL_HEIGHT}" fill="var(--erd-row-alt)" opacity="0.5"/>`;
-      }
-
-      // PK icon (key)
-      let textX = x + TABLE_PADDING_X;
-      if (col.isPrimaryKey) {
-        svg += `<text x="${textX}" y="${cy + 15}" font-size="10" fill="#f59e0b" font-weight="700" font-family="var(--font-mono)">PK</text>`;
-        textX += 22;
-      } else if (col.isForeignKey) {
-        svg += `<text x="${textX}" y="${cy + 15}" font-size="10" fill="#3b82f6" font-weight="700" font-family="var(--font-mono)">FK</text>`;
-        textX += 22;
-      } else {
-        textX += 4;
-      }
-
-      // Column name
-      const colName = truncate(col.name, 20);
-      svg += `<text x="${textX}" y="${cy + 15}" font-size="11" fill="var(--erd-col-text)" font-family="var(--font-mono)">${svgEscape(colName)}</text>`;
-
-      // Data type (right-aligned)
-      const typeStr = truncate(col.dataType, 15);
-      const typeWidth = measureTextWidth(typeStr);
-      const nullStr = col.isNullable ? '?' : '';
-      const nullW = nullStr ? 8 : 0;
-      svg += `<text x="${x + width - TABLE_PADDING_X - typeWidth - nullW}" y="${cy + 15}" font-size="10" fill="var(--erd-type-text)" font-family="var(--font-mono)">${svgEscape(typeStr)}</text>`;
-      if (nullStr) {
-        svg += `<text x="${x + width - TABLE_PADDING_X - 6}" y="${cy + 15}" font-size="10" fill="var(--erd-null-text)" font-family="var(--font-mono)">?</text>`;
-      }
-    }
-  }
-
-  // ── Legend ──
-  const legendY = 10;
-  const legendX = 10;
-  svg += `<g transform="translate(${legendX},${legendY})" opacity="0.7">`;
-  svg += `<text x="0" y="11" font-size="10" fill="var(--erd-col-text)" font-family="var(--font-sans)">`;
-  svg += `<tspan font-weight="700" fill="#f59e0b">PK</tspan> = Primary Key   `;
-  svg += `<tspan font-weight="700" fill="#3b82f6">FK</tspan> = Foreign Key   `;
-  svg += `<tspan fill="var(--erd-null-text)">?</tspan> = Nullable   `;
-  svg += `<tspan fill="var(--erd-type-text)">${baseTables.length} tables · ${validFks.length} relationships</tspan>`;
-  svg += `</text></g>`;
-
-  const fullSvg = `<svg xmlns="http://www.w3.org/2000/svg" width="${svgW}" height="${svgH}" viewBox="0 0 ${svgW} ${svgH}" style="font-family:var(--font-mono);">${svg}</svg>`;
-
-  // Wrap in pan/zoom container
+  
+  // Create interactive HTML DOM structure
   container.innerHTML = `
+    <style>
+      .erd-viewport { position: relative; overflow: hidden; width: 100%; height: 100%; background: var(--bg-body); cursor: grab; }
+      .erd-viewport:active { cursor: grabbing; }
+      .erd-canvas { position: absolute; transform-origin: 0 0; width: 0; height: 0; }
+      .erd-lines-layer { position: absolute; top: 0; left: 0; overflow: visible; pointer-events: none; z-index: 1; }
+      .erd-table-node {
+        position: absolute;
+        background: var(--erd-table-bg);
+        border: 1px solid var(--erd-table-border);
+        border-radius: 6px;
+        box-shadow: var(--shadow-sm);
+        display: flex;
+        flex-direction: column;
+        user-select: none;
+        z-index: 2;
+        transition: box-shadow 0.15s, border-color 0.15s;
+        cursor: pointer;
+        font-family: var(--font-mono);
+      }
+      .erd-table-node:hover {
+        box-shadow: var(--shadow-md);
+        border-color: var(--primary);
+        z-index: 10;
+      }
+      .erd-table-header {
+        height: ${HEADER_HEIGHT}px;
+        background: var(--erd-header-bg);
+        border-bottom: 1px solid var(--erd-table-border);
+        border-radius: 5px 5px 0 0;
+        padding: 0 ${TABLE_PADDING_X}px;
+        display: flex;
+        align-items: center;
+        font-weight: 700;
+        font-size: 13px;
+        color: var(--erd-header-text);
+        cursor: grab;
+      }
+      .erd-table-header:active { cursor: grabbing; }
+      .erd-table-row {
+        height: ${COL_HEIGHT}px;
+        padding: 0 ${TABLE_PADDING_X}px;
+        display: flex;
+        align-items: center;
+        font-size: 11px;
+        color: var(--erd-col-text);
+      }
+      .erd-table-row:nth-child(even) {
+        background: var(--erd-row-alt);
+      }
+      .erd-col-type {
+        margin-left: auto;
+        padding-left: 12px;
+        color: var(--erd-type-text);
+      }
+      .erd-badge-pk { color: #f59e0b; font-weight: 700; font-size: 10px; margin-right: 6px; width: 14px; }
+      .erd-badge-fk { color: #3b82f6; font-weight: 700; font-size: 10px; margin-right: 6px; width: 14px; }
+      .erd-badge-none { width: 20px; }
+      .erd-null-mark { color: var(--erd-null-text); margin-left: 4px; width: 8px; text-align: center; }
+    </style>
     <div class="erd-toolbar">
       <button class="erd-tool-btn" data-erd-action="zoomIn" title="Zoom in">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/><line x1="11" y1="8" x2="11" y2="14"/><line x1="8" y1="11" x2="14" y2="11"/></svg>
@@ -374,53 +316,185 @@ export function renderErd(
       <span class="erd-zoom-label" id="erd-zoom-pct">100%</span>
     </div>
     <div class="erd-viewport" id="erd-viewport">
-      <div class="erd-canvas" id="erd-canvas">${fullSvg}</div>
-    </div>`;
+      <div class="erd-canvas" id="erd-canvas">
+        <svg class="erd-lines-layer" id="erd-lines-layer"></svg>
+        <!-- Tables injected here -->
+      </div>
+    </div>
+  `;
 
-  // ── Pan & Zoom interaction ──
-  const viewport = container.querySelector('#erd-viewport') as HTMLElement;
   const canvas = container.querySelector('#erd-canvas') as HTMLElement;
+  const linesLayer = container.querySelector('#erd-lines-layer') as HTMLElement;
+  const nameToBox = new Map<string, TableBox>();
+  
+  // Render HTML Tables
+  for (const box of boxes) {
+    nameToBox.set(box.table.name, box);
+    const node = document.createElement('div');
+    node.className = 'erd-table-node';
+    node.id = `erd-table-${box.table.name}`;
+    node.style.left = `${box.x}px`;
+    node.style.top = `${box.y}px`;
+    node.style.width = `${box.width}px`;
+    
+    let html = `<div class="erd-table-header">${escapeHtml(truncate(box.table.name, 28))}</div>`;
+    
+    for (const col of box.table.columns) {
+      let badge = '<span class="erd-badge-none"></span>';
+      if (col.isPrimaryKey) badge = '<span class="erd-badge-pk">PK</span>';
+      else if (col.isForeignKey) badge = '<span class="erd-badge-fk">FK</span>';
+      
+      const nullMark = col.isNullable ? '<span class="erd-null-mark">?</span>' : '<span class="erd-null-mark"></span>';
+      
+      html += `
+        <div class="erd-table-row">
+          ${badge}
+          <span class="erd-col-name">${escapeHtml(truncate(col.name, 20))}</span>
+          <span class="erd-col-type">${escapeHtml(truncate(col.dataType, 15))}</span>
+          ${nullMark}
+        </div>`;
+    }
+    
+    node.innerHTML = html;
+    canvas.appendChild(node);
+  }
+
+  // Draw Relationships function
+  const drawLines = () => {
+    let svg = '';
+    for (const fk of validFks) {
+      const srcBoxOrig = nameToBox.get(fk.sourceTable);
+      const tgtBoxOrig = nameToBox.get(fk.targetTable);
+      if (!srcBoxOrig || !tgtBoxOrig) continue;
+
+      // Use current DOM positions instead of original grid layout
+      const srcNode = document.getElementById(`erd-table-${fk.sourceTable}`);
+      const tgtNode = document.getElementById(`erd-table-${fk.targetTable}`);
+      if (!srcNode || !tgtNode) continue;
+      
+      const srcBox = { ...srcBoxOrig, x: parseInt(srcNode.style.left), y: parseInt(srcNode.style.top) };
+      const tgtBox = { ...tgtBoxOrig, x: parseInt(tgtNode.style.left), y: parseInt(tgtNode.style.top) };
+
+      const srcCenterX = srcBox.x + srcBox.width / 2;
+      const tgtCenterX = tgtBox.x + tgtBox.width / 2;
+      const srcSide: 'left' | 'right' = srcCenterX < tgtCenterX ? 'right' : 'left';
+      const tgtSide: 'left' | 'right' = srcSide === 'right' ? 'left' : 'right';
+
+      const src = getColumnAnchor(srcBox, fk.sourceColumn, srcSide);
+      const tgt = getColumnAnchor(tgtBox, fk.targetColumn, tgtSide);
+
+      const path = buildRelationshipPath(src, tgt);
+      svg += `<path d="${path}" fill="none" stroke="var(--erd-rel-color)" stroke-width="1.5" stroke-dasharray="none" opacity="0.7"/>`;
+      svg += oneMarker(tgt.x, tgt.y, tgtSide);
+      svg += manyMarker(src.x, src.y, srcSide);
+    }
+    linesLayer.innerHTML = svg;
+  };
+  
+  // Initial draw
+  drawLines();
+
+  // ── Drag & Drop Logic for Tables ──
+  let draggedNode: HTMLElement | null = null;
+  let dragOffsetX = 0;
+  let dragOffsetY = 0;
+
+  canvas.addEventListener('mousedown', (e: MouseEvent) => {
+    const target = e.target as HTMLElement;
+    const header = target.closest('.erd-table-header');
+    if (header) {
+      const node = header.closest('.erd-table-node') as HTMLElement;
+      if (node) {
+        e.stopPropagation(); // prevent canvas pan
+        draggedNode = node;
+        node.style.zIndex = '20'; // bring to front
+        
+        // Calculate offset from node's top-left
+        const rect = node.getBoundingClientRect();
+        // Adjust for current scale
+        dragOffsetX = (e.clientX - rect.left) / scale;
+        dragOffsetY = (e.clientY - rect.top) / scale;
+      }
+    }
+  });
+
+  window.addEventListener('mousemove', (e: MouseEvent) => {
+    if (draggedNode) {
+      // Calculate new position in canvas coordinates
+      const canvasRect = canvas.getBoundingClientRect();
+      const newX = (e.clientX - canvasRect.left) / scale - dragOffsetX;
+      const newY = (e.clientY - canvasRect.top) / scale - dragOffsetY;
+      
+      draggedNode.style.left = `${Math.max(0, newX)}px`;
+      draggedNode.style.top = `${Math.max(0, newY)}px`;
+      drawLines();
+    }
+  }, { signal });
+
+  window.addEventListener('mouseup', () => {
+    if (draggedNode) {
+      draggedNode.style.zIndex = '2'; // Reset z-index
+      draggedNode = null;
+    }
+  }, { signal });
+
+  // ── Pan & Zoom Logic ──
+  const viewport = container.querySelector('#erd-viewport') as HTMLElement;
   const zoomLabel = container.querySelector('#erd-zoom-pct') as HTMLElement;
-  if (!viewport || !canvas) return;
 
   let scale = 1;
   let panX = 0, panY = 0;
   let isPanning = false;
-  let startX = 0, startY = 0;
+  let startPanX = 0, startPanY = 0;
 
   function applyTransform() {
     canvas.style.transform = `translate(${panX}px, ${panY}px) scale(${scale})`;
     if (zoomLabel) zoomLabel.textContent = Math.round(scale * 100) + '%';
   }
 
-  // Fit to view on initial render
-  const vw = viewport.clientWidth || 600;
-  const vh = viewport.clientHeight || 400;
-  if (svgW > 0 && svgH > 0) {
-    const sx = vw / svgW;
-    const sy = vh / svgH;
-    scale = Math.min(sx, sy, 1) * 0.92;
-    panX = Math.max(0, (vw - svgW * scale) / 2);
-    panY = Math.max(0, (vh - svgH * scale) / 2);
-    applyTransform();
+  // Calculate bounding box to fit view
+  function getBoundingBox() {
+    let maxX = 0, maxY = 0;
+    for (const box of boxes) {
+      const r = box.x + box.width;
+      const bot = box.y + box.height;
+      if (r > maxX) maxX = r;
+      if (bot > maxY) maxY = bot;
+    }
+    return { width: maxX + 100, height: maxY + 100 };
   }
 
+  function fitToView() {
+    const vw = viewport.clientWidth || 800;
+    const vh = viewport.clientHeight || 600;
+    const bounds = getBoundingBox();
+    if (bounds.width > 0 && bounds.height > 0) {
+      const sx = vw / bounds.width;
+      const sy = vh / bounds.height;
+      scale = Math.min(sx, sy, 1) * 0.92;
+      panX = Math.max(0, (vw - bounds.width * scale) / 2);
+      panY = Math.max(0, (vh - bounds.height * scale) / 2);
+      applyTransform();
+    }
+  }
+
+  fitToView();
+
   viewport.addEventListener('mousedown', (e: MouseEvent) => {
-    if (e.button !== 0) return;
+    if (e.button !== 0 || draggedNode) return; // don't pan if dragging a table
     isPanning = true;
-    startX = e.clientX - panX;
-    startY = e.clientY - panY;
-    viewport.style.cursor = 'grabbing';
+    startPanX = e.clientX - panX;
+    startPanY = e.clientY - panY;
   });
 
   viewport.addEventListener('mousemove', (e: MouseEvent) => {
     if (!isPanning) return;
-    panX = e.clientX - startX;
-    panY = e.clientY - startY;
+    panX = e.clientX - startPanX;
+    panY = e.clientY - startPanY;
     applyTransform();
   });
 
-  const stopPan = () => { isPanning = false; viewport.style.cursor = 'grab'; };
+  const stopPan = () => { isPanning = false; };
   viewport.addEventListener('mouseup', stopPan);
   viewport.addEventListener('mouseleave', stopPan);
 
@@ -446,18 +520,14 @@ export function renderErd(
       const action = btn.dataset.erdAction;
       if (action === 'zoomIn') {
         scale = Math.min(3, scale * 1.2);
+        applyTransform();
       } else if (action === 'zoomOut') {
         scale = Math.max(0.15, scale * 0.8);
+        applyTransform();
       } else if (action === 'fitAll') {
-        const vw2 = viewport.clientWidth || 600;
-        const vh2 = viewport.clientHeight || 400;
-        const sx = vw2 / svgW;
-        const sy = vh2 / svgH;
-        scale = Math.min(sx, sy, 1) * 0.92;
-        panX = Math.max(0, (vw2 - svgW * scale) / 2);
-        panY = Math.max(0, (vh2 - svgH * scale) / 2);
+        fitToView();
       }
-      applyTransform();
     });
   });
 }
+

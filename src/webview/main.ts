@@ -7,7 +7,7 @@ import { renderChartBlock, handleChartAggregateResult } from './components/chart
 import { loadMonaco, initMonacoEditor, getSelectedText } from './components/monaco';
 import { renderSummaryBlock, handleSummaryAggregateResult } from './components/summary';
 import { renderOverviewBlock, handleOverviewLoadResult } from './components/overview';
-import { renderAdvancedTableHtml, setupAdvancedTableListeners } from './components/table';
+import { renderAdvancedTableHtml, setupAdvancedTableListeners, clearTableFilter } from './components/table';
 import { handleFkPreviewResult, updateConstraintCache } from './components/fk-preview';
 import { defaultProfilerViewBuilder } from './components/profiler-view';
 import { renderWiki, setupWikiSearch } from './components/wiki';
@@ -811,7 +811,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).deleteCell = (idx: number) => {
-  if (cells[idx]?.type === 'connection') return; // Connection cell cannot be deleted
+  if (cells[idx]?.type === 'connection' || cells[idx]?.type === 'schema') return; // Cannot delete
   // Clean up columnCache entry for this cell to prevent stale data (BUG-6)
   const cellName = cells[idx]?.name || `table_${idx}`;
   delete columnCache[cellName];
@@ -823,9 +823,10 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 (window as any).moveCell = (idx: number, dir: number) => {
   const target = idx + dir;
   if (target < 0 || target >= cells.length) return;
-  // Prevent moving the connection cell or moving anything above it
-  if (cells[idx]?.type === 'connection') return;
-  if (cells[target]?.type === 'connection') return;
+  // Prevent moving system cells or moving anything above them
+  const isSystem = (c: any) => c?.type === 'connection' || c?.type === 'schema';
+  if (isSystem(cells[idx]) || isSystem(cells[target])) return;
+
   const temp = cells[idx];
   cells[idx] = cells[target];
   cells[target] = temp;
@@ -963,19 +964,28 @@ const PREVIEW_TABLE_IDX = 99999;
   const content = document.getElementById('table-preview-content');
   if (!content) return;
   const msg = _previewTableData;
-  let outputHtml = '<div class="output-area" style="height:100%; border:none;">';
-  outputHtml += renderAdvancedTableHtml(PREVIEW_TABLE_IDX, msg, escapeHtml);
-  outputHtml += '</div>';
-  content.innerHTML = outputHtml;
+  content.innerHTML = renderAdvancedTableHtml(PREVIEW_TABLE_IDX, msg, escapeHtml);
+  // Make the advanced table root flex to fill the space
+  const root = document.getElementById(`sqlnb-advanced-table-${PREVIEW_TABLE_IDX}`);
+  if (root) {
+      root.style.height = '100%';
+      root.style.display = 'flex';
+      root.style.flexDirection = 'column';
+      root.style.overflow = 'hidden';
+  }
   // Override table container max-height for modal (fills available space)
   const tc = content.querySelector('.sqlnb-table-container') as HTMLElement;
-  if (tc) tc.style.maxHeight = 'none';
+  if (tc) {
+      tc.style.maxHeight = 'none';
+      tc.style.flex = '1';
+  }
   setTimeout(() => setupAdvancedTableListeners(PREVIEW_TABLE_IDX, msg, escapeHtml), 0);
 };
 
 (window as any).previewTable = (tableName: string) => {
   // Clear old preview data + pinned columns for the preview index
   _previewTableData = null;
+  clearTableFilter(PREVIEW_TABLE_IDX);
 
   // Remove any existing overlay
   const oldOverlay = document.getElementById('table-preview-overlay');
@@ -1009,8 +1019,8 @@ const PREVIEW_TABLE_IDX = 99999;
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
         </button>
       </div>
-      <div id="table-preview-content" style="flex: 1; overflow: auto; padding: 12px;">
-         ${SPINNER_SVG} Loading...
+      <div id="table-preview-content" style="flex: 1; overflow: hidden; display: flex; flex-direction: column; padding: 0;">
+         <div style="padding: 12px;">${SPINNER_SVG} Loading...</div>
       </div>
     `;
     document.body.appendChild(popup);
@@ -1169,6 +1179,15 @@ window.addEventListener('message', event => {
 
   if (msg.type === 'sql-result') {
     const idx = msg.cellIndex;
+    if (idx === PREVIEW_TABLE_IDX) {
+      _previewTableData = msg;
+      if (document.getElementById('table-preview-popup')) {
+        (window as any).rerenderPreviewTable();
+      } else if (document.getElementById('sqlnb-fk-modal') && (window as any).handleFkPreviewResult) {
+        (window as any).handleFkPreviewResult(msg, escapeHtml);
+      }
+      return;
+    }
     if (idx == null || !cells[idx]) return;
 
     let outputHtml = '<div class="output-area">';
@@ -1199,6 +1218,15 @@ window.addEventListener('message', event => {
 
   if (msg.type === 'filter-result') {
     const idx = msg.cellIndex;
+    if (idx === PREVIEW_TABLE_IDX) {
+      _previewTableData = msg;
+      if (document.getElementById('table-preview-popup')) {
+        (window as any).rerenderPreviewTable();
+      } else if (document.getElementById('sqlnb-fk-modal') && (window as any).handleFkPreviewResult) {
+        (window as any).handleFkPreviewResult(msg, escapeHtml);
+      }
+      return;
+    }
     if (idx == null || !cells[idx]) return;
 
     if (msg.error) {

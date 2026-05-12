@@ -16,6 +16,8 @@ const pinnedColumnsMap = new Map<number, string[]>();
 let tableAbortControllers = new Map<number, AbortController>();
 /** Active WHERE-clause filter expressions per cell index. */
 const activeFilters = new Map<number, string>();
+export function setTableFilter(idx: number, expr: string) { activeFilters.set(idx, expr); }
+export function clearTableFilter(idx: number) { activeFilters.delete(idx); }
 
 
 export function renderAdvancedTableHtml(idx: number, msg: any, escapeHtml: (s: any) => string): string {

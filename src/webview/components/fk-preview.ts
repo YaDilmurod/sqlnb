@@ -8,6 +8,7 @@ declare const window: any;
 declare const vscode: any;
 
 import { SPINNER_SVG, formatElapsed, oidToType } from './ui-utils';
+import { renderAdvancedTableHtml, setupAdvancedTableListeners, setTableFilter } from './table';
 
 // SVG icons (no emojis per RULES.md)
 const FK_MODAL_ICON = '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>';
@@ -126,103 +127,99 @@ function showLoadingModal(tableName: string, column: string, value: any) {
     wireCloseHandlers(modal);
 }
 
-/** Handle the preview-fk-result message and render the modal. */
+/** Handle the preview-fk-result (or sql-result / filter-result) message and render the modal. */
 export function handleFkPreviewResult(msg: any, escapeHtml: (s: any) => string) {
-    // Remove any existing modal
-    const existing = document.getElementById('sqlnb-fk-modal');
-    if (existing) {
-        restoreBodyScroll();
-        existing.remove();
+    let modal = document.getElementById('sqlnb-fk-modal');
+    const isNew = !modal;
+    
+    if (!modal) {
+        modal = document.createElement('div');
+        modal.id = 'sqlnb-fk-modal';
+        modal.className = 'sqlnb-fk-modal-overlay';
     }
-
-    const modal = document.createElement('div');
-    modal.id = 'sqlnb-fk-modal';
-    modal.className = 'sqlnb-fk-modal-overlay';
 
     if (msg.error) {
         modal.innerHTML = `
-            <div class="sqlnb-fk-modal-content">
-                <div class="sqlnb-fk-modal-header">
+            <div class="sqlnb-fk-modal-content" style="display:flex;flex-direction:column;height:80vh;">
+                <div class="sqlnb-fk-modal-header" style="flex-shrink:0;">
                     <div class="sqlnb-fk-modal-title">
                         <span class="sqlnb-fk-modal-icon">${FK_MODAL_ICON}</span>
                         FK Preview — ${escapeHtml(msg.tableName || 'Error')}
                     </div>
                     <button class="sqlnb-fk-modal-close" title="Close (Esc)">${CLOSE_ICON}</button>
                 </div>
-                <div class="sqlnb-fk-modal-body">
-                    <div class="sqlnb-fk-error">${escapeHtml(msg.error)}</div>
+                <div class="sqlnb-fk-modal-body" style="flex:1;overflow:hidden;padding:0;">
+                    <div class="sqlnb-error" style="padding: 24px; color: var(--danger);">${escapeHtml(msg.error)}</div>
                 </div>
             </div>`;
-    } else {
-        const rows = msg.rows || [];
-        const fields = msg.fields || [];
-        const headers = fields.map((f: any) => f.name);
-        const elapsed = msg.elapsedMs ? formatElapsed(msg.elapsedMs) : '';
-
-        let tableHtml = '';
-        if (rows.length === 0) {
-            tableHtml = '<div class="sqlnb-fk-empty">No rows found</div>';
-        } else {
-            tableHtml = '<div class="sqlnb-fk-table-wrap"><table class="sqlnb-fk-table"><thead><tr>';
-            for (const h of headers) {
-                const f = fields.find((ff: any) => ff.name === h);
-                const typeLabel = f ? oidToType(f.dataTypeID) : '';
-                const isPk = f ? isPrimaryKey(f.tableID, f.columnID) : false;
-                const fkInfo = f ? getForeignKeyInfo(f.tableID, f.columnID) : null;
-                let badges = '';
-                if (isPk) badges += '<span class="sqlnb-badge-pk" title="Primary Key">PK</span>';
-                if (fkInfo) badges += `<span class="sqlnb-badge-fk" title="FK \u2192 ${escapeHtml(fkInfo.targetTable)}.${escapeHtml(fkInfo.targetColumn)}">FK</span>`;
-                tableHtml += `<th><div class="sqlnb-fk-th-content"><span>${escapeHtml(h)}</span>${badges}<span class="sqlnb-fk-th-type">${escapeHtml(typeLabel)}</span></div></th>`;
-            }
-            tableHtml += '</tr></thead><tbody>';
-            for (const row of rows) {
-                tableHtml += '<tr>';
-                for (const h of headers) {
-                    const val = row[h];
-                    const display = val === null || val === undefined ? '<span class="null-val">NULL</span>' : escapeHtml(String(val));
-                    const f = fields.find((ff: any) => ff.name === h);
-                    const cellFk = f ? getForeignKeyInfo(f.tableID, f.columnID) : null;
-                    if (cellFk && val !== null && val !== undefined) {
-                        tableHtml += `<td style="position:relative;">${display}<span class="sqlnb-fk-cell-link" data-fk-schema="${escapeHtml(cellFk.targetSchema)}" data-fk-table="${escapeHtml(cellFk.targetTable)}" data-fk-column="${escapeHtml(cellFk.targetColumn)}" data-fk-value="${escapeHtml(String(val))}" title="Open ${escapeHtml(cellFk.targetTable)}.${escapeHtml(cellFk.targetColumn)} = ${escapeHtml(String(val))}">${FK_CELL_ICON}</span></td>`;
-                    } else {
-                        tableHtml += `<td>${display}</td>`;
-                    }
-                }
-                tableHtml += '</tr>';
-            }
-            tableHtml += '</tbody></table></div>';
+        if (isNew) {
+            document.body.appendChild(modal);
+            disableBodyScroll();
         }
-
-        modal.innerHTML = `
-            <div class="sqlnb-fk-modal-content">
-                <div class="sqlnb-fk-modal-header">
-                    <div class="sqlnb-fk-modal-title">
-                        <span class="sqlnb-fk-modal-icon">${FK_MODAL_ICON}</span>
-                        ${escapeHtml(msg.tableName)} <span class="sqlnb-fk-modal-filter">WHERE ${escapeHtml(msg.column)} = '${escapeHtml(String(msg.value))}'</span>
-                    </div>
-                    <div class="sqlnb-fk-modal-meta">${rows.length} row${rows.length !== 1 ? 's' : ''} \u2022 ${elapsed}</div>
-                    <button class="sqlnb-fk-modal-close" title="Close (Esc)">${CLOSE_ICON}</button>
-                </div>
-                <div class="sqlnb-fk-modal-body">${tableHtml}</div>
-            </div>`;
+        wireCloseHandlers(modal);
+        return;
     }
 
-    document.body.appendChild(modal);
-    disableBodyScroll();
-    wireCloseHandlers(modal);
+    // Only set header details if this is a fresh preview-fk-result (has tableName).
+    // Sorting/filtering updates via sql-result won't have tableName, so we keep existing header.
+    if (msg.tableName || isNew) {
+        modal.innerHTML = `
+            <div class="sqlnb-fk-modal-content" style="display:flex;flex-direction:column;height:80vh;max-height:80vh;">
+                <div class="sqlnb-fk-modal-header" style="flex-shrink:0;">
+                    <div class="sqlnb-fk-modal-title">
+                        <span class="sqlnb-fk-modal-icon">${FK_MODAL_ICON}</span>
+                        ${escapeHtml(msg.tableName || 'Table')} <span class="sqlnb-fk-modal-filter">WHERE ${escapeHtml(msg.column || 'col')} = '${escapeHtml(String(msg.value || ''))}'</span>
+                    </div>
+                    <button class="sqlnb-fk-modal-close" title="Close (Esc)">${CLOSE_ICON}</button>
+                </div>
+                <div class="sqlnb-fk-modal-body" style="flex:1;overflow:hidden;display:flex;flex-direction:column;padding:0;">
+                    <div style="padding: 24px;">${SPINNER_SVG} Loading...</div>
+                </div>
+            </div>`;
+        if (isNew) {
+            document.body.appendChild(modal);
+            disableBodyScroll();
+        }
+        wireCloseHandlers(modal);
+        
+        // Prefill filter
+        if (msg.column && msg.value !== undefined) {
+            // Need to quote strings correctly depending on type, but DuckDB/PG mostly handle text casts well.
+            const safeVal = String(msg.value).replace(/'/g, "''");
+            const safeCol = `"${msg.column.replace(/"/g, '""')}"`;
+            setTableFilter(99999, `${safeCol}::text = '${safeVal}'`);
+        }
+    }
 
-    // Nested FK links inside the modal
-    modal.querySelectorAll('.sqlnb-fk-cell-link').forEach((link: any) => {
-        link.addEventListener('click', (e: any) => {
-            e.stopPropagation();
-            const schema = link.dataset.fkSchema;
-            const table = link.dataset.fkTable;
-            const column = link.dataset.fkColumn;
-            const value = link.dataset.fkValue;
-            requestFkPreview(schema, table, column, value);
-        });
-    });
+    const body = modal.querySelector('.sqlnb-fk-modal-body');
+    if (body) {
+        const rows = msg.rows || [];
+        if (rows.length === 0) {
+            body.innerHTML = '<div class="sqlnb-fk-empty" style="padding:24px;">No rows found</div>';
+        } else {
+            body.innerHTML = renderAdvancedTableHtml(99999, msg, escapeHtml);
+            
+            // Override table container max-height for modal (fills available space)
+            const root = body.querySelector('#sqlnb-advanced-table-99999') as HTMLElement;
+            if (root) {
+                root.style.height = '100%';
+                root.style.display = 'flex';
+                root.style.flexDirection = 'column';
+                root.style.overflow = 'hidden';
+            }
+            const tc = body.querySelector('.sqlnb-table-container') as HTMLElement;
+            if (tc) {
+                tc.style.maxHeight = 'none';
+                tc.style.flex = '1';
+            }
+            
+            setTimeout(() => setupAdvancedTableListeners(99999, msg, escapeHtml), 0);
+        }
+    }
 }
+
+// Expose so main.ts can call it on sort/filter result
+(window as any).handleFkPreviewResult = handleFkPreviewResult;
 
 /** Wire close handlers (button, overlay click, Escape) with cleanup. */
 function wireCloseHandlers(modal: any) {
