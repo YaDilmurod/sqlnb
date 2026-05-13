@@ -6,7 +6,6 @@ import { renderSchemaBlock, handleSchemaLoadResult } from './components/schema';
 import { renderChartBlock, handleChartAggregateResult } from './components/chart';
 import { loadMonaco, initMonacoEditor, getSelectedText } from './components/monaco';
 import { renderSummaryBlock, handleSummaryAggregateResult } from './components/summary';
-import { renderOverviewBlock, handleOverviewLoadResult } from './components/overview';
 import { renderAdvancedTableHtml, setupAdvancedTableListeners, clearTableFilter } from './components/table';
 import { handleFkPreviewResult, updateConstraintCache } from './components/fk-preview';
 import { defaultProfilerViewBuilder } from './components/profiler-view';
@@ -23,7 +22,6 @@ interface Cell {
   _chartData?: any; // Chart cache
   _schemaData?: any; // Schema cache
   _summaryData?: any; // Profiler cache
-  _overviewData?: any; // Overview cache
 }
 
 let cells: Cell[] = [];
@@ -50,7 +48,7 @@ function parseCells(jsonText: string): Cell[] {
     const data = JSON.parse(jsonText);
     return data.cells || [];
   } catch {
-    return [{ type: 'connection', content: 'duckdb||' }, { type: 'overview', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
+    return [{ type: 'connection', content: 'duckdb||' }, { type: 'schema', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
   }
 }
 
@@ -221,7 +219,6 @@ function renderMarkdown(md: string): string {
 // Single source of truth for all block types. Adding a new block means adding one entry here.
 const CELL_TYPES: Record<string, { label: string; badgeClass: string; needsConnection: boolean }> = {
   connection: { label: 'Connection', badgeClass: 'badge-conn',    needsConnection: false },
-  overview:   { label: 'Overview',   badgeClass: 'badge-schema',  needsConnection: true },
   sql:        { label: 'SQL',        badgeClass: 'badge-sql',     needsConnection: true },
   markdown:   { label: 'Markdown',   badgeClass: 'badge-md',      needsConnection: false },
   schema:     { label: 'Schema',     badgeClass: 'badge-schema',  needsConnection: true },
@@ -245,7 +242,7 @@ function buildInsertDivider(pos: number): string {
 
 
 function updateRunButtonStates() {
-  const actions = ['runSql', 'chartRun', 'chartRefresh', 'summaryRun', 'schemaRun', 'overviewRun'];
+  const actions = ['runSql', 'chartRun', 'chartRefresh', 'summaryRun', 'schemaRun'];
   actions.forEach(action => {
     document.querySelectorAll(`button[data-action="${action}"]`).forEach((btn: any) => {
       btn.disabled = !isConnected;
@@ -280,7 +277,9 @@ function updateConnectionCellUI() {
       existingBtn.id = '';
     } else {
       const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
-      const hasValue = inp && !!inp.value.trim();
+      const driverInp = document.getElementById('conn-driver-' + idx) as HTMLInputElement;
+      const isDuck = driverInp?.value === 'duckdb';
+      const hasValue = isDuck || (inp && !!inp.value.trim());
       existingBtn.style.background = '';
       existingBtn.id = 'conn-btn-' + idx;
       existingBtn.setAttribute('data-action', 'connectDb');
@@ -370,9 +369,7 @@ function renderCells() {
     }
 
     // Status indicator — unified location in toolbar for all types that need it
-    if (cell.type === 'overview') {
-      toolbar += '<span class="cell-status" id="overview-status-' + idx + '" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>';
-    } else if (cell.type === 'schema') {
+    if (cell.type === 'schema') {
       toolbar += '<span class="cell-status" id="schema-status-' + idx + '" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>';
     } else if (cell.type === 'chart') {
       toolbar += '<span class="cell-status" id="chart-status-' + idx + '" style="font-size:12px;color:var(--text-muted);margin-left:auto;"></span>';
@@ -387,9 +384,6 @@ function renderCells() {
       toolbar += '<button class="btn-action btn-run" data-action="runSql" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
       toolbar += '<button class="btn-icon" data-action="toggleWiki" data-idx="' + idx + '" title="Wiki / Examples"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></button>';
     }
-    if (cell.type === 'overview') {
-      toolbar += '<button class="btn-action btn-run" data-action="overviewRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
-    }
     if (cell.type === 'schema') {
       toolbar += '<button class="btn-action btn-run" data-action="schemaRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
     }
@@ -401,8 +395,8 @@ function renderCells() {
       toolbar += '<button class="btn-action btn-run" data-action="summaryRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Profile</button>';
     }
 
-    // System cells (connection, overview) cannot be deleted or moved
-    const isSystemCell = cell.type === 'connection' || cell.type === 'overview';
+    // System cells (connection, schema) cannot be deleted or moved
+    const isSystemCell = cell.type === 'connection' || cell.type === 'schema';
     if (!isSystemCell) {
       if (idx > 0) toolbar += '<button class="btn-icon" data-action="moveCellUp" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>';
       if (idx < cells.length - 1) toolbar += '<button class="btn-icon" data-action="moveCellDown" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg></button>';
@@ -458,9 +452,7 @@ function renderCells() {
     else if (cell.type === 'markdown') {
       content += '<div class="md-editor" style="display:none;" id="md-edit-' + idx + '"><textarea id="md-ta-' + idx + '" spellcheck="false">' + escapeHtml(cell.content) + '</textarea></div><div class="md-preview" id="md-preview-' + idx + '" ondblclick="editMarkdown(' + idx + ')">' + (renderMarkdown(cell.content) || '<em>Double-click to edit...</em>') + '</div>';
     } 
-    else if (cell.type === 'overview') {
-      content += renderOverviewBlock(idx, escapeHtml);
-    }
+
     else if (cell.type === 'schema') {
       content += renderSchemaBlock(idx, escapeHtml);
     }
@@ -626,9 +618,7 @@ function renderCells() {
     
     // Re-hydrate cached DOM states
     setTimeout(() => {
-      if (cell.type === 'overview' && cell._overviewData) {
-        handleOverviewLoadResult(cell._overviewData, escapeHtml);
-      } else if (cell.type === 'chart' && cell._chartData) {
+      if (cell.type === 'chart' && cell._chartData) {
         handleChartAggregateResult(cell._chartData, escapeHtml);
       } else if (cell.type === 'schema' && cell._schemaData) {
         handleSchemaLoadResult(cell._schemaData, escapeHtml);
@@ -691,11 +681,19 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 
 // ── Refresh File: migrate old notebooks to latest structure ──
 // Ensures required system blocks exist in the correct order:
-//   [0] connection  →  [1] overview  →  ... user blocks
-// Old notebooks may be missing the overview block, have schema as the
-// second cell, or default to postgres when DuckDB is more appropriate.
+//   [0] connection  →  [1] schema  →  ... user blocks
+// Old notebooks may be missing the schema block or default to
+// postgres when DuckDB is more appropriate.
 (window as any).refreshFile = () => {
   let changed = false;
+
+  // 0. Convert any legacy 'overview' cells to 'schema'
+  cells.forEach(c => {
+    if (c.type === 'overview') {
+      c.type = 'schema';
+      changed = true;
+    }
+  });
 
   // 1. Ensure a connection cell exists at position 0
   const connIdx = cells.findIndex(c => c.type === 'connection');
@@ -709,16 +707,25 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
     changed = true;
   }
 
-  // 2. Ensure an overview cell exists at position 1 (right after connection)
-  const overviewIdx = cells.findIndex(c => c.type === 'overview');
-  if (overviewIdx < 0) {
-    // No overview block — insert one at index 1
-    cells.splice(1, 0, { type: 'overview', content: '' });
+  // 2. Ensure exactly one schema cell at position 1 (right after connection)
+  //    If migration created duplicates (old overview + old schema), keep only the first
+  const allSchemaIdxs = cells.map((c, i) => c.type === 'schema' ? i : -1).filter(i => i >= 0);
+  if (allSchemaIdxs.length > 1) {
+    // Remove all but the first schema cell (iterate in reverse to preserve indices)
+    for (let j = allSchemaIdxs.length - 1; j > 0; j--) {
+      cells.splice(allSchemaIdxs[j], 1);
+    }
     changed = true;
-  } else if (overviewIdx !== 1) {
-    // Move overview to position 1
-    const [overviewCell] = cells.splice(overviewIdx, 1);
-    cells.splice(1, 0, overviewCell);
+  }
+  const schemaIdx = cells.findIndex(c => c.type === 'schema');
+  if (schemaIdx < 0) {
+    // No schema block — insert one at index 1
+    cells.splice(1, 0, { type: 'schema', content: '' });
+    changed = true;
+  } else if (schemaIdx !== 1) {
+    // Move schema to position 1
+    const [schemaCell] = cells.splice(schemaIdx, 1);
+    cells.splice(1, 0, schemaCell);
     changed = true;
   }
 
@@ -771,13 +778,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   }
 };
 
-(window as any).overviewLoad = (idx: number) => {
-  const status = document.getElementById('overview-status-' + idx);
-  if (status) status.innerHTML = processingHtml('Loading overview...');
-  const content = document.getElementById('overview-content-' + idx);
-  if (content) content.innerHTML = '<div style="padding:16px;">' + SPINNER_SVG + ' Loading database overview...</div>';
-  vscode.postMessage({ type: 'overview-load', cellIndex: idx });
-};
+
 
 (window as any).schemaLoad = (idx: number) => {
   const status = document.getElementById('schema-status-' + idx);
@@ -884,7 +885,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).deleteCell = (idx: number) => {
-  if (cells[idx]?.type === 'connection' || cells[idx]?.type === 'overview') return; // Cannot delete system cells
+  if (cells[idx]?.type === 'connection' || cells[idx]?.type === 'schema') return; // Cannot delete system cells
   // Clean up columnCache entry for this cell to prevent stale data (BUG-6)
   const cellName = cells[idx]?.name || `table_${idx}`;
   delete columnCache[cellName];
@@ -897,7 +898,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   const target = idx + dir;
   if (target < 0 || target >= cells.length) return;
   // Prevent moving system cells or moving anything above them
-  const isSystem = (c: any) => c?.type === 'connection' || c?.type === 'overview';
+  const isSystem = (c: any) => c?.type === 'connection' || c?.type === 'schema';
   if (isSystem(cells[idx]) || isSystem(cells[target])) return;
 
   const temp = cells[idx];
@@ -1359,7 +1360,7 @@ window.addEventListener('message', event => {
     cells = parsed.map((nc, i) => {
       const oc = cells[i];
       if (oc && oc.type === nc.type) {
-        return { ...nc, _output: oc._output, _outputData: oc._outputData, _chartData: oc._chartData, _schemaData: oc._schemaData, _summaryData: oc._summaryData, _overviewData: oc._overviewData };
+        return { ...nc, _output: oc._output, _outputData: oc._outputData, _chartData: oc._chartData, _schemaData: oc._schemaData, _summaryData: oc._summaryData };
       }
       return nc;
     });
@@ -1375,6 +1376,7 @@ window.addEventListener('message', event => {
     isConnected = msg.success;
     dbName = msg.dbName || '';
     driverType = msg.driverType || '';
+    (window as any)._sqlnbDriverType = driverType;
 
     updateConnectionCellUI();
     updateRunButtonStates();
@@ -1391,10 +1393,9 @@ window.addEventListener('message', event => {
            }
        }
     }
-    // Auto-load overview and schema blocks on successful connect
+    // Auto-load schema blocks on successful connect
     if (msg.success) {
       cells.forEach((c, i) => {
-        if (c.type === 'overview') (window as any).overviewLoad(i);
         if (c.type === 'schema') (window as any).schemaLoad(i);
       });
     }
@@ -1551,13 +1552,7 @@ window.addEventListener('message', event => {
     }
   }
 
-  if (msg.type === 'overview-load-result') {
-    const cell = cells[msg.cellIndex];
-    if (cell) cell._overviewData = msg;
-    const overviewStatus = document.getElementById('overview-status-' + msg.cellIndex);
-    if (overviewStatus) overviewStatus.innerHTML = '';
-    handleOverviewLoadResult(msg, escapeHtml);
-  }
+
 
   if (msg.type === 'schema-load-result') {
     const cell = cells[msg.cellIndex];
@@ -1648,7 +1643,6 @@ document.addEventListener('click', (e) => {
   else if (action === 'summaryRun') { if (!isConnected) return; (window as any).summaryRun(idx); }
   else if (action === 'chartRun') { if (!isConnected) return; (window as any).chartRun(idx); }
   else if (action === 'chartRefresh') { if (!isConnected) return; (window as any).chartRefresh(idx); }
-  else if (action === 'overviewRun') { if (!isConnected) return; (window as any).overviewLoad(idx); }
   else if (action === 'schemaRun') { if (!isConnected) return; (window as any).schemaLoad(idx); }
   else if (action === 'refreshFile') (window as any).refreshFile();
   else if (action === 'toggleWiki') {

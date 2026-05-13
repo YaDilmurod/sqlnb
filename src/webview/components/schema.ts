@@ -274,16 +274,6 @@ export function handleSchemaLoadResult(msg: any, escapeHtml: (s: any) => string)
                 if (chevron) chevron.classList.toggle('sch-chevron-open', !isOpen);
             }
         });
-        // Auto-expand if there's only one schema
-        if (schemaNames.length === 1) {
-            const key = header.getAttribute('data-toggle-schema');
-            const body = content.querySelector(`[data-schema-body="${key}"]`);
-            const chevron = header.querySelector('.sch-schema-chevron');
-            if (body) {
-                body.style.display = 'block';
-                if (chevron) chevron.classList.add('sch-chevron-open');
-            }
-        }
     });
 
     // Type-level toggles (Tables / Views / Mat Views)
@@ -299,16 +289,6 @@ export function handleSchemaLoadResult(msg: any, escapeHtml: (s: any) => string)
                 if (chevron) chevron.classList.toggle('sch-chevron-open', !isOpen);
             }
         });
-        // Auto-expand type sections when schema is auto-expanded (single schema)
-        if (schemaNames.length === 1) {
-            const key = header.getAttribute('data-toggle-type');
-            const body = content.querySelector(`[data-type-body="${key}"]`);
-            const chevron = header.querySelector('.sch-type-chevron');
-            if (body) {
-                body.style.display = 'block';
-                if (chevron) chevron.classList.add('sch-chevron-open');
-            }
-        }
     });
 
     // Table-level toggles (expand/collapse columns)

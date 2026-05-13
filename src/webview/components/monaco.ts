@@ -314,6 +314,22 @@ function registerSqlCompletionProvider() {
                 });
             }
 
+            // ─── CASE 5: SQL function suggestions ───
+            const driverType: string = (window as any)._sqlnbDriverType || 'postgres';
+            const funcs = getSqlFunctions(driverType);
+            for (const fn of funcs) {
+                suggestions.push({
+                    label: fn.name,
+                    kind: Kind.Function,
+                    detail: fn.category,
+                    documentation: fn.doc,
+                    insertText: fn.insertText,
+                    insertTextRules: monaco.languages.CompletionItemInsertTextRule.InsertAsSnippet,
+                    range,
+                    sortText: '3' + fn.name
+                });
+            }
+
             return { suggestions };
         }
     });
@@ -593,3 +609,5 @@ function inferSelectColumns(selectBody: string): { name: string; type: string }[
 
     return columns;
 }
+
+import { getSqlFunctions } from './sql-functions';
