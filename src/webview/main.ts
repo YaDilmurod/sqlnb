@@ -1082,23 +1082,118 @@ const PREVIEW_TABLE_IDX = 99999;
 };
 
 // ── Global keyboard shortcut guard for input fields ──
-// VS Code webview can intercept Cmd+A/Z/X/C/V before they reach input elements.
-// This capture-phase listener ensures native input shortcuts work correctly
-// whenever a text input, textarea, or Monaco editor has focus.
+// VS Code webview intercepts Cmd/Ctrl+C/V/X/Z/A at the iframe boundary level,
+// BEFORE the DOM event even reaches our JavaScript. Simply calling
+// stopPropagation() doesn't help because the interception happens outside the
+// iframe. The fix: manually implement clipboard operations via the Clipboard
+// API / execCommand fallbacks, and track undo history per input, so these
+// shortcuts always work inside input/textarea elements.
+
+// Undo history for input/textarea elements (simple per-element stack)
+const undoStacks = new WeakMap<HTMLElement, string[]>();
+
+function pushUndo(el: HTMLInputElement | HTMLTextAreaElement) {
+  let stack = undoStacks.get(el);
+  if (!stack) { stack = []; undoStacks.set(el, stack); }
+  const last = stack[stack.length - 1];
+  if (last !== el.value) stack.push(el.value);
+  // Cap undo history at 50 entries
+  if (stack.length > 50) stack.shift();
+}
+
 document.addEventListener('keydown', (e: KeyboardEvent) => {
-  const el = document.activeElement;
+  const el = document.activeElement as HTMLElement;
   if (!el) return;
   const tag = el.tagName?.toLowerCase();
   const isInput = tag === 'input' || tag === 'textarea';
   // Monaco uses a hidden textarea with class 'inputarea' inside .monaco-editor
   const isMonaco = !!el.closest?.('.monaco-editor');
+
   if (!isInput && !isMonaco) return;
-  // Let Cmd/Ctrl shortcuts pass through natively to the focused element
-  if ((e.metaKey || e.ctrlKey) && ['a', 'c', 'v', 'x', 'z'].includes(e.key.toLowerCase())) {
-    e.stopPropagation(); // prevent VS Code / parent handlers from intercepting
-    // Do NOT preventDefault — let the browser handle the native action
+
+  // Only intercept Cmd/Ctrl shortcuts
+  if (!(e.metaKey || e.ctrlKey)) return;
+  const key = e.key.toLowerCase();
+  if (!['a', 'c', 'v', 'x', 'z'].includes(key)) return;
+
+  // Always stop propagation to prevent other in-page handlers (like table
+  // Cmd+C) from stealing the event
+  e.stopPropagation();
+
+  // For Monaco, it handles its own clipboard natively — just stop propagation
+  if (isMonaco) return;
+
+  // For regular input/textarea: manually implement the shortcut because
+  // VS Code's webview container swallows the native browser action.
+  const inp = el as HTMLInputElement | HTMLTextAreaElement;
+  const start = inp.selectionStart ?? 0;
+  const end = inp.selectionEnd ?? 0;
+  const selectedText = inp.value.slice(start, end);
+
+  e.preventDefault(); // we handle the action ourselves
+
+  if (key === 'a') {
+    // Select All
+    inp.setSelectionRange(0, inp.value.length);
+  }
+  else if (key === 'c') {
+    // Copy
+    if (selectedText) {
+      navigator.clipboard.writeText(selectedText).catch(() => {
+        // Fallback: temporary textarea + execCommand
+        const ta = document.createElement('textarea');
+        ta.value = selectedText;
+        ta.style.position = 'fixed';
+        ta.style.left = '-9999px';
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+      });
+    }
+  }
+  else if (key === 'x') {
+    // Cut
+    if (selectedText) {
+      pushUndo(inp);
+      navigator.clipboard.writeText(selectedText).catch(() => {});
+      // Remove selected text
+      inp.value = inp.value.slice(0, start) + inp.value.slice(end);
+      inp.selectionStart = inp.selectionEnd = start;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    }
+  }
+  else if (key === 'v') {
+    // Paste
+    pushUndo(inp);
+    navigator.clipboard.readText().then(text => {
+      if (!text) return;
+      inp.value = inp.value.slice(0, start) + text + inp.value.slice(end);
+      inp.selectionStart = inp.selectionEnd = start + text.length;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    }).catch(() => {});
+  }
+  else if (key === 'z') {
+    // Undo
+    const stack = undoStacks.get(el);
+    if (stack && stack.length > 0) {
+      const prev = stack.pop()!;
+      inp.value = prev;
+      inp.selectionStart = inp.selectionEnd = prev.length;
+      inp.dispatchEvent(new Event('input', { bubbles: true }));
+    }
   }
 }, true); // capture phase — runs before any other handler
+
+// Track undo history on every input for all text fields
+document.addEventListener('input', (e: Event) => {
+  const el = e.target as HTMLElement;
+  if (!el) return;
+  const tag = el.tagName?.toLowerCase();
+  if (tag === 'input' || tag === 'textarea') {
+    pushUndo(el as HTMLInputElement | HTMLTextAreaElement);
+  }
+}, true);
 
 // ── Message Listener ──
 
