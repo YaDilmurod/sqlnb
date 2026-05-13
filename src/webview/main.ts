@@ -50,7 +50,7 @@ function parseCells(jsonText: string): Cell[] {
     const data = JSON.parse(jsonText);
     return data.cells || [];
   } catch {
-    return [{ type: 'connection', content: 'duckdb||' }, { type: 'schema', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
+    return [{ type: 'connection', content: 'duckdb||' }, { type: 'overview', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
   }
 }
 
@@ -308,10 +308,14 @@ function renderApp() {
   ).join('');
 
   app.innerHTML = `
-    <div class="notebook-toolbar" style="padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface); display: flex; align-items: center;">
+    <div class="notebook-toolbar" style="padding: 10px 16px; border-bottom: 1px solid var(--border-color); background: var(--bg-surface); display: flex; align-items: center; gap: 8px;">
       <button class="btn-primary" id="btn-run-all" onclick="window.runAllSql()" style="display: flex; align-items: center; gap: 4px;">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
         Run All
+      </button>
+      <button class="btn-action" id="btn-refresh-file" data-action="refreshFile" title="Migrate this notebook to the latest format (adds missing system blocks)" style="display: flex; align-items: center; gap: 4px; font-size: 12px;">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>
+        Refresh File
       </button>
     </div>
     <div class="cells-container" id="cells"></div>
@@ -397,7 +401,9 @@ function renderCells() {
       toolbar += '<button class="btn-action btn-run" data-action="summaryRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Profile</button>';
     }
 
-    if (cell.type !== 'connection') {
+    // System cells (connection, overview) cannot be deleted or moved
+    const isSystemCell = cell.type === 'connection' || cell.type === 'overview';
+    if (!isSystemCell) {
       if (idx > 0) toolbar += '<button class="btn-icon" data-action="moveCellUp" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>';
       if (idx < cells.length - 1) toolbar += '<button class="btn-icon" data-action="moveCellDown" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg></button>';
       toolbar += '<button class="btn-icon btn-delete" data-action="deleteCell" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg></button>';
@@ -409,31 +415,32 @@ function renderCells() {
 
     if (cell.type === 'connection') {
       // Parse driver type from cell content (format: "driverType||connString" or just "connString")
-      let storedDriver = 'postgres';
+      let storedDriver = 'duckdb'; // DuckDB is the default
       let connString = cell.content;
       if (cell.content.includes('||')) {
         const parts = cell.content.split('||');
         storedDriver = parts[0];
         connString = parts.slice(1).join('||');
-      } else if (!cell.content.startsWith('postgres') && cell.content && !cell.content.includes('://')) {
-        storedDriver = 'duckdb';
+      } else if (cell.content.startsWith('postgres://') || cell.content.startsWith('postgresql://')) {
+        storedDriver = 'postgres';
       }
       const pgPlaceholder = 'postgresql://user:password@localhost:5432/dbname';
-      const duckPlaceholder = '/path/to/database.db  (leave empty for in-memory)';
+      const duckPlaceholder = 'Leave empty for in-memory, or enter path to .db file';
       const placeholder = storedDriver === 'duckdb' ? duckPlaceholder : pgPlaceholder;
-      content += '<div class="conn-form"><div class="conn-row" style="display:flex; gap:8px;">';
+      const isDuck = storedDriver === 'duckdb';
+      content += '<div class="conn-form"><div class="conn-row" style="display:flex; gap:8px; align-items:center;">';
       content += `<div class="conn-driver-toggle" id="conn-toggle-container-${idx}" style="display:flex; background:var(--vscode-input-background); border:1px solid var(--vscode-input-border); border-radius:4px; overflow:hidden;">
-        <button type="button" class="conn-driver-btn" data-driver="duckdb" style="padding:4px 12px; border:none; background:${storedDriver === 'duckdb' ? 'var(--button-bg)' : 'transparent'}; color:var(--text-color); cursor:pointer;">DuckDB</button>
-        <button type="button" class="conn-driver-btn" data-driver="postgres" style="padding:4px 12px; border:none; background:${storedDriver === 'postgres' ? 'var(--button-bg)' : 'transparent'}; color:var(--text-color); cursor:pointer; border-left:1px solid var(--vscode-input-border);">PostgreSQL</button>
+        <button type="button" class="conn-driver-btn" data-driver="duckdb" style="padding:4px 12px; border:none; background:${isDuck ? 'var(--button-bg)' : 'transparent'}; color:var(--text-color); cursor:pointer; font-size:12px; font-weight:${isDuck ? '600' : '400'};">Local Files</button>
+        <button type="button" class="conn-driver-btn" data-driver="postgres" style="padding:4px 12px; border:none; background:${!isDuck ? 'var(--button-bg)' : 'transparent'}; color:var(--text-color); cursor:pointer; border-left:1px solid var(--vscode-input-border); font-size:12px; font-weight:${!isDuck ? '600' : '400'};">PostgreSQL</button>
       </div>`;
       content += `<input type="hidden" id="conn-driver-${idx}" value="${escapeHtml(storedDriver)}" />`;
-      content += '<input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(connString) + '" placeholder="' + placeholder + '" spellcheck="false" list="recent-conns-' + idx + '" style="flex:1;" />';
+      content += '<input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(connString) + '" placeholder="' + placeholder + '" spellcheck="false" list="recent-conns-' + idx + '" style="flex:1;' + (isDuck && !connString ? 'opacity:0.7;' : '') + '" />';
       content += '<datalist id="recent-conns-' + idx + '">' + recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('') + '</datalist>';
       if (isConnected) {
         content += '<button class="btn-primary" style="background:var(--danger)" data-action="disconnectDb">Disconnect</button>';
       } else {
         // DuckDB allows empty conn string (in-memory), so always enable for duckdb
-        const hasValue = storedDriver === 'duckdb' || !!connString.trim();
+        const hasValue = isDuck || !!connString.trim();
         const connDisabled = !hasValue ? ' disabled style="opacity:0.4;cursor:not-allowed;"' : '';
         content += '<button class="btn-primary" id="conn-btn-' + idx + '" data-action="connectDb" data-idx="' + idx + '"' + connDisabled + '>Connect</button>';
       }
@@ -682,6 +689,72 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   renderCells();
 };
 
+// ── Refresh File: migrate old notebooks to latest structure ──
+// Ensures required system blocks exist in the correct order:
+//   [0] connection  →  [1] overview  →  ... user blocks
+// Old notebooks may be missing the overview block, have schema as the
+// second cell, or default to postgres when DuckDB is more appropriate.
+(window as any).refreshFile = () => {
+  let changed = false;
+
+  // 1. Ensure a connection cell exists at position 0
+  const connIdx = cells.findIndex(c => c.type === 'connection');
+  if (connIdx < 0) {
+    cells.unshift({ type: 'connection', content: 'duckdb||' });
+    changed = true;
+  } else if (connIdx !== 0) {
+    // Move connection cell to index 0
+    const [connCell] = cells.splice(connIdx, 1);
+    cells.unshift(connCell);
+    changed = true;
+  }
+
+  // 2. Ensure an overview cell exists at position 1 (right after connection)
+  const overviewIdx = cells.findIndex(c => c.type === 'overview');
+  if (overviewIdx < 0) {
+    // No overview block — insert one at index 1
+    cells.splice(1, 0, { type: 'overview', content: '' });
+    changed = true;
+  } else if (overviewIdx !== 1) {
+    // Move overview to position 1
+    const [overviewCell] = cells.splice(overviewIdx, 1);
+    cells.splice(1, 0, overviewCell);
+    changed = true;
+  }
+
+  // 3. Normalize connection cell driver: if it has no explicit driver, default to duckdb
+  const connCell = cells[0];
+  if (connCell && connCell.type === 'connection') {
+    if (!connCell.content.includes('||')) {
+      // Legacy format without driver prefix
+      const cs = connCell.content;
+      if (cs.startsWith('postgres://') || cs.startsWith('postgresql://')) {
+        connCell.content = 'postgres||' + cs;
+      } else {
+        connCell.content = 'duckdb||' + cs;
+      }
+      changed = true;
+    }
+  }
+
+  if (changed) {
+    save();
+    renderCells();
+  }
+
+  // Flash the button to confirm the action
+  const btn = document.getElementById('btn-refresh-file');
+  if (btn) {
+    const origText = btn.innerHTML;
+    btn.innerHTML = '<svg width=\"14\" height=\"14\" viewBox=\"0 0 24 24\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\"><polyline points=\"20 6 9 17 4 12\"></polyline></svg> ' + (changed ? 'Updated' : 'Up to date');
+    btn.style.color = 'var(--success)';
+    setTimeout(() => {
+      btn.innerHTML = origText;
+      btn.style.color = '';
+    }, 2000);
+  }
+};
+
 // Re-render a single table (used by pin toggle)
 (window as any).rerenderSqlTable = (idx: number) => {
   const cell = cells[idx];
@@ -811,7 +884,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
 };
 
 (window as any).deleteCell = (idx: number) => {
-  if (cells[idx]?.type === 'connection' || cells[idx]?.type === 'schema') return; // Cannot delete
+  if (cells[idx]?.type === 'connection' || cells[idx]?.type === 'overview') return; // Cannot delete system cells
   // Clean up columnCache entry for this cell to prevent stale data (BUG-6)
   const cellName = cells[idx]?.name || `table_${idx}`;
   delete columnCache[cellName];
@@ -824,7 +897,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   const target = idx + dir;
   if (target < 0 || target >= cells.length) return;
   // Prevent moving system cells or moving anything above them
-  const isSystem = (c: any) => c?.type === 'connection' || c?.type === 'schema';
+  const isSystem = (c: any) => c?.type === 'connection' || c?.type === 'overview';
   if (isSystem(cells[idx]) || isSystem(cells[target])) return;
 
   const temp = cells[idx];
@@ -1116,12 +1189,103 @@ document.addEventListener('keydown', (e: KeyboardEvent) => {
   const key = e.key.toLowerCase();
   if (!['a', 'c', 'v', 'x', 'z'].includes(key)) return;
 
-  // Always stop propagation to prevent other in-page handlers (like table
-  // Cmd+C) from stealing the event
+  // Always stop propagation to prevent VS Code webview from swallowing the event
   e.stopPropagation();
 
-  // For Monaco, it handles its own clipboard natively — just stop propagation
-  if (isMonaco) return;
+  // ── Clipboard helper: write text to system clipboard ──
+  // Try navigator.clipboard first (fast path), fall back to extension host API
+  function clipboardWrite(text: string) {
+    try {
+      navigator.clipboard.writeText(text).catch(() => {
+        // Browser API failed — route through extension host
+        vscode.postMessage({ type: 'clipboard-write', text });
+      });
+    } catch {
+      vscode.postMessage({ type: 'clipboard-write', text });
+    }
+  }
+
+  // ── Clipboard helper: read text from system clipboard ──
+  // Always routes through extension host (vscode.env.clipboard) because
+  // navigator.clipboard.readText() is the most unreliable API in webviews —
+  // browsers block it in iframes due to Permissions-Policy restrictions.
+  function clipboardRead(callback: (text: string) => void) {
+    const reqId = 'clip-' + Date.now() + '-' + Math.random();
+    const onResult = (event: any) => {
+      const data = event.data;
+      if (data.type === 'clipboard-read-result' && data.requestId === reqId) {
+        window.removeEventListener('message', onResult);
+        if (data.text) callback(data.text);
+      }
+    };
+    window.addEventListener('message', onResult);
+    vscode.postMessage({ type: 'clipboard-read', requestId: reqId });
+    // Safety timeout — don't leak the listener
+    setTimeout(() => window.removeEventListener('message', onResult), 3000);
+  }
+
+  // For Monaco: VS Code webview intercepts clipboard shortcuts at the iframe level,
+  // so Monaco never receives them natively. We manually handle clipboard via
+  // Monaco's model API + extension host clipboard routing.
+  if (isMonaco) {
+    e.preventDefault();
+    // Find the Monaco editor instance for this element
+    const editorContainer = el.closest('.sql-editor');
+    if (!editorContainer) return;
+    const containerId = editorContainer.id;
+    const idxMatch = containerId?.match(/sql-container-(\d+)/);
+    if (!idxMatch) return;
+    const editor = monacoEditors.get(parseInt(idxMatch[1], 10));
+    if (!editor) return;
+
+    const model = editor.getModel();
+    const selection = editor.getSelection();
+
+    if (key === 'a') {
+      // Select All — use Monaco's API
+      if (model) {
+        const fullRange = model.getFullModelRange();
+        editor.setSelection(fullRange);
+      }
+    }
+    else if (key === 'c') {
+      // Copy — read selected text from model, write to system clipboard
+      if (selection && !selection.isEmpty() && model) {
+        const text = model.getValueInRange(selection);
+        clipboardWrite(text);
+      }
+    }
+    else if (key === 'x') {
+      // Cut — copy selected text then delete it via an edit operation
+      if (selection && !selection.isEmpty() && model) {
+        const text = model.getValueInRange(selection);
+        clipboardWrite(text);
+        editor.executeEdits('clipboard', [{
+          range: selection,
+          text: '',
+          forceMoveMarkers: true,
+        }]);
+      }
+    }
+    else if (key === 'v') {
+      // Paste — read from system clipboard via extension host, insert at cursor
+      clipboardRead(text => {
+        const sel = editor.getSelection();
+        if (sel) {
+          editor.executeEdits('clipboard', [{
+            range: sel,
+            text: text,
+            forceMoveMarkers: true,
+          }]);
+        }
+      });
+    }
+    else if (key === 'z') {
+      // Undo — trigger Monaco's built-in undo (doesn't need clipboard)
+      editor.trigger('keyboard', 'undo', null);
+    }
+    return;
+  }
 
   // For regular input/textarea: manually implement the shortcut because
   // VS Code's webview container swallows the native browser action.
@@ -1139,24 +1303,14 @@ document.addEventListener('keydown', (e: KeyboardEvent) => {
   else if (key === 'c') {
     // Copy
     if (selectedText) {
-      navigator.clipboard.writeText(selectedText).catch(() => {
-        // Fallback: temporary textarea + execCommand
-        const ta = document.createElement('textarea');
-        ta.value = selectedText;
-        ta.style.position = 'fixed';
-        ta.style.left = '-9999px';
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand('copy');
-        document.body.removeChild(ta);
-      });
+      clipboardWrite(selectedText);
     }
   }
   else if (key === 'x') {
     // Cut
     if (selectedText) {
       pushUndo(inp);
-      navigator.clipboard.writeText(selectedText).catch(() => {});
+      clipboardWrite(selectedText);
       // Remove selected text
       inp.value = inp.value.slice(0, start) + inp.value.slice(end);
       inp.selectionStart = inp.selectionEnd = start;
@@ -1164,14 +1318,13 @@ document.addEventListener('keydown', (e: KeyboardEvent) => {
     }
   }
   else if (key === 'v') {
-    // Paste
+    // Paste — read from extension host clipboard
     pushUndo(inp);
-    navigator.clipboard.readText().then(text => {
-      if (!text) return;
+    clipboardRead(text => {
       inp.value = inp.value.slice(0, start) + text + inp.value.slice(end);
       inp.selectionStart = inp.selectionEnd = start + text.length;
       inp.dispatchEvent(new Event('input', { bubbles: true }));
-    }).catch(() => {});
+    });
   }
   else if (key === 'z') {
     // Undo
@@ -1497,6 +1650,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'chartRefresh') { if (!isConnected) return; (window as any).chartRefresh(idx); }
   else if (action === 'overviewRun') { if (!isConnected) return; (window as any).overviewLoad(idx); }
   else if (action === 'schemaRun') { if (!isConnected) return; (window as any).schemaLoad(idx); }
+  else if (action === 'refreshFile') (window as any).refreshFile();
   else if (action === 'toggleWiki') {
     let popup = document.getElementById('global-wiki-popup');
     if (!popup) {

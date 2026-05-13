@@ -143,6 +143,19 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           webviewPanel.webview.postMessage({ type: 'disconnect-result', success: true });
           break;
         }
+        case 'clipboard-write': {
+          // Webview cannot reliably access system clipboard — route through extension host
+          if (msg.text) {
+            await vscode.env.clipboard.writeText(msg.text);
+          }
+          break;
+        }
+        case 'clipboard-read': {
+          // Webview cannot reliably read system clipboard — route through extension host
+          const clipText = await vscode.env.clipboard.readText();
+          webviewPanel.webview.postMessage({ type: 'clipboard-read-result', text: clipText, requestId: msg.requestId });
+          break;
+        }
         case 'cancel-query': {
           await this.cancelQuery(session);
           break;
