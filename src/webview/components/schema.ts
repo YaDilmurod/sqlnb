@@ -13,6 +13,7 @@ const MATVIEW_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none
 const SCHEMA_ICON = '<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"/><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"/></svg>';
 const KEY_ICON = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px; margin-right:1px;"><path d="m21 2-2 2m-7.61 7.61a5.5 5.5 0 1 1-7.778 7.778 5.5 5.5 0 0 1 7.777-7.777zm0 0L15.5 7.5m0 0 3 3L22 7l-3-3m-3.5 3.5L19 4"></path></svg>';
 const PREVIEW_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2"/><polyline points="8 12 12 16 16 12"/><line x1="12" y1="8" x2="12" y2="16"/></svg>';
+const DDL_ICON = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>';
 
 interface SchemaTableInfo {
     schema: string;
@@ -20,6 +21,13 @@ interface SchemaTableInfo {
     tableType: 'table' | 'view' | 'materialized_view';
     columns: { name: string; dataType: string; isPrimaryKey: boolean; isNullable: boolean }[];
     sizeBytes: number | null;
+}
+
+// Detect timezone-aware column types
+function isTimezoneAware(dataType: string): boolean {
+    const dt = dataType.toLowerCase();
+    return dt.includes('timestamptz') || dt.includes('timestamp with time zone')
+        || dt.includes('timetz') || dt.includes('time with time zone');
 }
 
 function formatSize(bytes: number | null): string {
@@ -61,18 +69,36 @@ function renderTableItem(
         const nullBadge = c.isNullable
             ? '<span class="sch-col-null">NULL</span>'
             : '';
+        const tzBadge = isTimezoneAware(c.dataType)
+            ? (() => {
+                const tz = (window as any)._sqlnbTimezone || '';
+                const label = tz ? `TZ: ${tz}` : 'TZ';
+                const tip = tz
+                    ? `Timezone-aware column \u2014 session timezone: ${tz}`
+                    : 'Timezone-aware column (stores/returns values relative to session timezone)';
+                return `<span class="sch-col-tz" title="${tip}">${label}</span>`;
+              })()
+            : '';
         return `<div class="sch-col-row">
             ${pkBadge}<span class="sch-col-name">${escapeHtml(c.name)}</span>
             <span class="sch-col-type">${escapeHtml(c.dataType)}</span>
+            ${tzBadge}
             ${nullBadge}
         </div>`;
     }).join('');
+
+    // DDL button — only for views and materialized views
+    const isViewLike = t.tableType === 'view' || t.tableType === 'materialized_view';
+    const ddlBtn = isViewLike
+        ? `<button class="sch-ddl-btn" data-action="viewDdl" data-table-name="${escapeHtml(t.name)}" data-table-type="${t.tableType}" data-schema-name="${escapeHtml(t.schema)}" title="View DDL definition">${DDL_ICON}</button>`
+        : '';
 
     return `<div class="sch-table-item" id="${tableId}">
         <div class="sch-table-header">
             <span class="sch-table-chevron">${CHEVRON_RIGHT}</span>
             <span class="sch-table-name">${escapeHtml(t.name)}</span>
             <span class="sch-table-meta">${colCount} col${colCount !== 1 ? 's' : ''}${sizeStr ? ' · ' + sizeStr : ''}</span>
+            ${ddlBtn}
             <button class="sch-preview-btn" data-table-name="${escapeHtml(fullName)}" title="Preview table data">${PREVIEW_ICON}</button>
         </div>
         <div class="sch-table-columns" style="display:none;">
@@ -319,4 +345,70 @@ export function handleSchemaLoadResult(msg: any, escapeHtml: (s: any) => string)
             }
         });
     });
+
+    // DDL buttons — view DDL definition for views/matviews
+    content.querySelectorAll('.sch-ddl-btn').forEach((btn: any) => {
+        btn.addEventListener('click', (e: any) => {
+            e.stopPropagation();
+            // Handled via event delegation in main.ts (data-action="viewDdl")
+        });
+    });
+}
+
+/** Handle the DDL result from provider and show it in a modal */
+export function handleViewDdlResult(msg: any, escapeHtml: (s: any) => string) {
+    // Remove existing DDL modal
+    const existingOverlay = document.getElementById('ddl-modal-overlay');
+    if (existingOverlay) existingOverlay.remove();
+    const existingModal = document.getElementById('ddl-modal');
+    if (existingModal) existingModal.remove();
+
+    const overlay = document.createElement('div');
+    overlay.id = 'ddl-modal-overlay';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.4);backdrop-filter:blur(2px);';
+
+    const modal = document.createElement('div');
+    modal.id = 'ddl-modal';
+    modal.style.cssText = 'position:fixed;top:15%;left:15%;width:70%;height:70%;z-index:9999;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--border-radius-md);box-shadow:var(--shadow-md);display:flex;flex-direction:column;';
+
+    const title = msg.tableName || 'DDL';
+    const typeLabel = msg.tableType === 'materialized_view' ? 'Materialized View' : 'View';
+    let bodyContent = '';
+
+    if (msg.error) {
+        bodyContent = `<div style="padding:20px;color:var(--danger);font-family:var(--font-mono);font-size:13px;">${escapeHtml(msg.error)}</div>`;
+    } else {
+        const ddl = msg.ddl || 'No DDL found.';
+        bodyContent = `<pre style="padding:20px;margin:0;font-family:var(--font-mono);font-size:13px;line-height:1.6;color:var(--text-main);overflow:auto;flex:1;white-space:pre-wrap;word-break:break-word;background:var(--bg-surface-inset);">${escapeHtml(ddl)}</pre>`;
+    }
+
+    modal.innerHTML = `
+        <div style="padding:14px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:12px;background:var(--bg-surface-hover);border-radius:var(--border-radius-md) var(--border-radius-md) 0 0;flex-shrink:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            <div>
+                <span style="font-weight:600;font-size:14px;color:var(--text-main);">${escapeHtml(title)}</span>
+                <span style="font-size:11px;color:var(--text-muted);margin-left:8px;padding:2px 8px;background:var(--bg-surface-inset);border-radius:4px;">${typeLabel}</span>
+            </div>
+            <button id="ddl-modal-close" style="margin-left:auto;background:transparent;border:1px solid var(--border-color);color:var(--text-muted);width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            </button>
+        </div>
+        <div style="flex:1;overflow:auto;display:flex;flex-direction:column;">${bodyContent}</div>
+    `;
+
+    document.body.appendChild(overlay);
+    document.body.appendChild(modal);
+
+    function closeDdl() {
+        overlay.remove();
+        modal.remove();
+        document.removeEventListener('keydown', ddlEscHandler);
+    }
+    function ddlEscHandler(e: KeyboardEvent) {
+        if (e.key === 'Escape') closeDdl();
+    }
+
+    document.getElementById('ddl-modal-close')?.addEventListener('click', closeDdl);
+    overlay.addEventListener('click', closeDdl);
+    document.addEventListener('keydown', ddlEscHandler);
 }

@@ -987,7 +987,7 @@ button[disabled] {
   border-radius: 4px;
   transition: all 0.15s ease;
   flex-shrink: 0;
-  opacity: 0;
+  opacity: 0.5;
 }
 
 .sch-table-header:hover .sch-preview-btn {
@@ -995,6 +995,32 @@ button[disabled] {
 }
 
 .sch-preview-btn:hover {
+  color: var(--primary);
+  background: var(--primary-light);
+  border-color: var(--primary);
+}
+
+/* DDL button for views/matviews */
+.sch-ddl-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-subtle);
+  cursor: pointer;
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  opacity: 0.5;
+}
+
+.sch-table-header:hover .sch-ddl-btn {
+  opacity: 1;
+}
+
+.sch-ddl-btn:hover {
   color: var(--primary);
   background: var(--primary-light);
   border-color: var(--primary);
@@ -1027,6 +1053,23 @@ button[disabled] {
   color: var(--text-subtle);
   font-size: 9px;
   margin-left: auto;
+}
+
+/* Timezone-aware column badge */
+.sch-col-tz {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 4px;
+  font-size: 8px;
+  font-weight: 700;
+  letter-spacing: 0.5px;
+  border-radius: 3px;
+  line-height: 1.4;
+  background: #ede9fe;
+  color: #6d28d9;
+  border: 1px solid #c4b5fd;
+  flex-shrink: 0;
+  cursor: help;
 }
 
 /* ── PK / FK Badges ── */

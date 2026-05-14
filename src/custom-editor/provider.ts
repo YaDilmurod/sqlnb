@@ -135,6 +135,8 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           if (result.success) {
             this.sendAutoCompleteMetadata(session, webviewPanel);
             this.sendConstraintMetadata(session, webviewPanel);
+            // Fetch session timezone and send to webview
+            this.sendSessionTimezone(session, webviewPanel);
           }
           break;
         }
@@ -251,6 +253,43 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             webviewPanel.webview.postMessage({ type: 'schema-load-result', cellIndex: msg.cellIndex, tables, elapsedMs: performance.now() - start });
           } catch (err: any) {
             webviewPanel.webview.postMessage({ type: 'schema-load-result', cellIndex: msg.cellIndex, error: err.message, elapsedMs: performance.now() - start });
+          }
+          break;
+        }
+        case 'view-ddl': {
+          if (!session.driver || !session.driver.isConnected()) {
+            webviewPanel.webview.postMessage({ type: 'view-ddl-result', tableName: msg.tableName, tableType: msg.tableType, error: 'Not connected' });
+            break;
+          }
+          const schemaName = msg.schemaName || 'public';
+          const viewName = msg.tableName;
+          const viewType = msg.tableType; // 'view' or 'materialized_view'
+          let ddlQuery: string;
+          if (session.driverType === 'duckdb') {
+            ddlQuery = `SELECT sql FROM duckdb_views() WHERE view_name = '${viewName.replace(/'/g, "''")}'`;
+          } else if (viewType === 'materialized_view') {
+            ddlQuery = `SELECT definition FROM pg_matviews WHERE schemaname = '${schemaName.replace(/'/g, "''")}' AND matviewname = '${viewName.replace(/'/g, "''")}'`;
+          } else {
+            ddlQuery = `SELECT pg_get_viewdef('${schemaName.replace(/'/g, "''")}."${viewName.replace(/"/g, '""')}"'::regclass, true) AS definition`;
+          }
+          try {
+            const ddlResult = await session.driver.executeRaw(ddlQuery);
+            let ddl = '';
+            if (ddlResult.rows && ddlResult.rows.length > 0) {
+              const row = ddlResult.rows[0];
+              ddl = row.definition || row.sql || row.pg_get_viewdef || '';
+              // Wrap in a CREATE statement for display
+              if (ddl && !ddl.trim().toUpperCase().startsWith('CREATE')) {
+                if (viewType === 'materialized_view') {
+                  ddl = `CREATE MATERIALIZED VIEW ${schemaName !== 'public' ? schemaName + '.' : ''}${viewName} AS\n${ddl}`;
+                } else {
+                  ddl = `CREATE OR REPLACE VIEW ${schemaName !== 'public' ? schemaName + '.' : ''}${viewName} AS\n${ddl}`;
+                }
+              }
+            }
+            webviewPanel.webview.postMessage({ type: 'view-ddl-result', tableName: viewName, tableType: viewType, ddl });
+          } catch (err: any) {
+            webviewPanel.webview.postMessage({ type: 'view-ddl-result', tableName: viewName, tableType: viewType, error: err.message });
           }
           break;
         }
@@ -637,6 +676,25 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
       panel.webview.postMessage({ type: 'constraint-metadata', ...constraints });
     } catch {
       // Constraint metadata is best-effort — never block the user
+    }
+  }
+
+  /** Silently fetch session timezone and send to webview for TZ badge display. */
+  private async sendSessionTimezone(session: DocumentSession, panel: vscode.WebviewPanel): Promise<void> {
+    if (!session.driver || !session.driver.isConnected()) return;
+    try {
+      const tzQuery = session.driverType === 'duckdb'
+        ? "SELECT current_setting('TimeZone') AS timezone"
+        : 'SHOW timezone';
+      const result = await session.driver.executeRaw(tzQuery);
+      let timezone = '';
+      if (result.rows && result.rows.length > 0) {
+        const row = result.rows[0];
+        timezone = row.timezone || row.TimeZone || Object.values(row)[0] || '';
+      }
+      panel.webview.postMessage({ type: 'session-timezone', timezone: String(timezone) });
+    } catch {
+      // Timezone detection is best-effort
     }
   }
 

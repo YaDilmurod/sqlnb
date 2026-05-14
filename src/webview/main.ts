@@ -2,7 +2,7 @@ declare const acquireVsCodeApi: any;
 const vscode = acquireVsCodeApi();
 (window as any).vscode = vscode;
 
-import { renderSchemaBlock, handleSchemaLoadResult } from './components/schema';
+import { renderSchemaBlock, handleSchemaLoadResult, handleViewDdlResult } from './components/schema';
 import { renderChartBlock, handleChartAggregateResult } from './components/chart';
 import { loadMonaco, initMonacoEditor, getSelectedText } from './components/monaco';
 import { renderSummaryBlock, handleSummaryAggregateResult } from './components/summary';
@@ -12,6 +12,7 @@ import { defaultProfilerViewBuilder } from './components/profiler-view';
 import { renderWiki, setupWikiSearch } from './components/wiki';
 import { initCustomSelects, initCustomAutocompletes } from './components/dropdown';
 import { SPINNER_SVG, processingHtml, formatElapsed, unwrapCustomSelect } from './components/ui-utils';
+import { format as formatSql } from 'sql-formatter';
 
 interface Cell {
   type: string;
@@ -382,7 +383,8 @@ function renderCells() {
     // Action buttons — consistent placement for all cell types
     if (cell.type === 'sql') {
       toolbar += '<button class="btn-action btn-run" data-action="runSql" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
-      toolbar += '<button class="btn-icon" data-action="toggleWiki" data-idx="' + idx + '" title="Wiki / Examples"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path><line x1="12" y1="17" x2="12.01" y2="17"></line></svg></button>';
+      toolbar += '<button class="btn-action" data-action="prettifySql" data-idx="' + idx + '" title="Format SQL"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>';
+      toolbar += '<button class="btn-icon" data-action="toggleWiki" data-idx="' + idx + '" title="SQL Wiki / Reference"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></button>';
     }
     if (cell.type === 'schema') {
       toolbar += '<button class="btn-action btn-run" data-action="schemaRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
@@ -931,6 +933,30 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   vscode.postMessage({ type: 'disconnect' });
 };
 
+(window as any).prettifySql = (idx: number) => {
+  const editor = monacoEditors.get(idx);
+  if (!editor) return;
+  const model = editor.getModel();
+  if (!model) return;
+  const currentValue = model.getValue();
+  if (!currentValue.trim()) return;
+  try {
+    const lang = driverType === 'postgres' ? 'postgresql' : 'sql';
+    const formatted = formatSql(currentValue, {
+      language: lang,
+      tabWidth: 2,
+      keywordCase: 'upper',
+      dataTypeCase: 'upper',
+      functionCase: 'upper',
+    });
+    model.setValue(formatted);
+    cells[idx].content = formatted;
+    save();
+  } catch {
+    // Formatting failed — leave the SQL as-is
+  }
+};
+
 (window as any).runSql = (idx: number) => {
   const cell = cells[idx];
   if (!cell) return;
@@ -1421,9 +1447,14 @@ window.addEventListener('message', event => {
     isConnected = false;
     dbName = '';
     driverType = '';
+    (window as any)._sqlnbTimezone = '';
 
     updateConnectionCellUI();
     updateRunButtonStates();
+  }
+
+  if (msg.type === 'session-timezone') {
+    (window as any)._sqlnbTimezone = msg.timezone || '';
   }
 
   if (msg.type === 'sql-result') {
@@ -1552,6 +1583,10 @@ window.addEventListener('message', event => {
     }
   }
 
+  if (msg.type === 'view-ddl-result') {
+    handleViewDdlResult(msg, escapeHtml);
+  }
+
 
 
   if (msg.type === 'schema-load-result') {
@@ -1631,6 +1666,7 @@ document.addEventListener('click', (e) => {
   if (action === 'connectDb') (window as any).connectDb(idx);
   else if (action === 'disconnectDb') (window as any).disconnectDb();
   else if (action === 'runSql') { if (!isConnected) return; (window as any).runSql(idx); }
+  else if (action === 'prettifySql') (window as any).prettifySql(idx);
   else if (action === 'cancelSql') (window as any).cancelSql();
   else if (action === 'addCell' && typeStr) (window as any).addCell(typeStr);
   else if (action === 'insertCell') {
@@ -1645,6 +1681,12 @@ document.addEventListener('click', (e) => {
   else if (action === 'chartRefresh') { if (!isConnected) return; (window as any).chartRefresh(idx); }
   else if (action === 'schemaRun') { if (!isConnected) return; (window as any).schemaLoad(idx); }
   else if (action === 'refreshFile') (window as any).refreshFile();
+  else if (action === 'viewDdl') {
+    const tableName = btn.getAttribute('data-table-name') || '';
+    const tableType = btn.getAttribute('data-table-type') || '';
+    const schemaName = btn.getAttribute('data-schema-name') || 'public';
+    vscode.postMessage({ type: 'view-ddl', tableName, tableType, schemaName });
+  }
   else if (action === 'toggleWiki') {
     let popup = document.getElementById('global-wiki-popup');
     if (!popup) {
