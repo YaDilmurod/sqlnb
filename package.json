@@ -3,12 +3,11 @@
     "displayName": "SQLNB - SQL Notebook",
     "description": "A lightweight Jupyter-style SQL notebook for PostgreSQL — built for data analysts",
     "icon": "images/icon.png",
-    "version": "0.4.3",
+    "version": "0.5.0",
     "publisher": "SQLNB",
     "engines": {
         "vscode": "^1.80.0"
     },
-
     "categories": [
         "Notebooks",
         "Data Science"
@@ -71,6 +70,7 @@
         }
     },
     "scripts": {
+        "mcp": "tsx src/mcp/server.ts",
         "vscode:prepublish": "npm run compile",
         "compile": "npm run compile:extension && npm run compile:webview",
         "watch": "tsc -watch -p ./",
@@ -85,15 +85,18 @@
         "@types/pg": "^8.11.0",
         "@types/vscode": "^1.80.0",
         "esbuild": "^0.28.0",
+        "tsx": "^4.22.0",
         "typescript": "^5.3.0"
     },
     "dependencies": {
+        "@modelcontextprotocol/sdk": "^1.29.0",
         "duckdb": "^1.4.4",
         "duckdb-async": "^1.4.2",
         "echarts": "^5.5.0",
         "pg": "^8.11.3",
         "posthog-node": "^5.29.7",
-        "sql-formatter": "^15.7.4"
+        "sql-formatter": "^15.7.4",
+        "zod": "^4.4.3"
     },
     "license": "MIT"
 }

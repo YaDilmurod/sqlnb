@@ -132,7 +132,14 @@ export class PostgresDriver implements IDatabaseDriver {
     let pid: number | null = null;
     try {
       pid = await this._trackPid(client);
-      const result = await client.query(query);
+      let result = await client.query(query);
+      
+      // If multiple statements were executed, pg returns an array of results.
+      // We take the last result to return to the user.
+      if (Array.isArray(result)) {
+        result = result[result.length - 1];
+      }
+
       return {
         rows: sanitizeRows(result.rows || []),
         fields: (result.fields || []).map((f: any) => ({ name: f.name, dataTypeID: f.dataTypeID, tableID: f.tableID || 0, columnID: f.columnID || 0 })),
