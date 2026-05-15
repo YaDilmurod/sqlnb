@@ -35,14 +35,15 @@ Click **+ Chart** in the toolbar → pick X/Y axes → click **Run Chart**.
 | Feature | What it does |
 |---|---|
 | **Notebook Format** | Mix Markdown + SQL + Charts in `.sqlnb` files |
+| **Premium UX** | Collapsible cells, inline SQL status bars, and modern connection management |
 | **Schema Browser** | Browse tables, views, and materialized views with toggle filters |
 | **Smart Tables** | Server-side cursors for large datasets — zero RAM spikes |
 | **Server-Side Sort** | Click column headers to sort millions of rows on the DB side |
 | **Charts** | Bar, Line, Scatter, Pie via ECharts — with multiple Y axes, separate axes, and log scale |
 | **Data Profile** | One-click summary statistics (numeric, categorical, date columns) |
 | **Query Cancel** | Stop runaway queries instantly via interrupt |
-| **CSV Export** | Export any result to CSV |
-| **Connection Manager** | Save multiple connections, switch with one click |
+| **CSV / Excel Export** | Export any result to CSV or Excel |
+| **Connection Modal** | Configure Postgres or DuckDB with dedicated connection cards and test buttons |
 
 ---
 

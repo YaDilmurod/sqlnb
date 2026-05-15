@@ -23,6 +23,8 @@ interface Cell {
   _chartData?: any; // Chart cache
   _schemaData?: any; // Schema cache
   _summaryData?: any; // Profiler cache
+  _collapsed?: boolean; // Collapse state (transient)
+  _lastStatus?: { type: 'success' | 'error' | 'running'; text: string }; // SQL status bar
 }
 
 let cells: Cell[] = [];
@@ -239,7 +241,223 @@ function buildInsertDivider(pos: number): string {
 
 // ── DOM Manipulation ──
 
+// SVG icons used in multiple places
+const CHEVRON_DOWN_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"></polyline></svg>';
+const SETTINGS_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>';
+const DATABASE_SVG = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"></ellipse><path d="M21 12c0 1.66-4 3-9 3s-9-1.34-9-3"></path><path d="M3 5v14c0 1.66 4 3 9 3s9-1.34 9-3V5"></path></svg>';
 
+/** Build a collapse summary for a cell (shown when collapsed) */
+function getCollapseSummary(cell: Cell, idx: number): string {
+  if (cell.type === 'sql') {
+    if (cell._lastStatus) {
+      // Strip HTML tags for plain-text summary
+      return cell._lastStatus.text.replace(/<[^>]*>/g, '');
+    }
+    const firstLine = (cell.content || '').split('\n')[0].trim().substring(0, 60);
+    return firstLine || 'Empty query';
+  }
+  if (cell.type === 'markdown') {
+    return (cell.content || '').split('\n')[0].trim().substring(0, 60) || 'Empty';
+  }
+  if (cell.type === 'chart') return 'Chart';
+  if (cell.type === 'summary') return 'Profiler';
+  return '';
+}
+
+/** Build a SQL status bar HTML string */
+function buildSqlStatusBar(idx: number, cell: Cell): string {
+  const s = cell._lastStatus;
+  if (!s) return `<div class="sql-status-bar" id="sql-status-${idx}"></div>`;
+  const dotClass = s.type === 'success' ? 'dot-success' : s.type === 'error' ? 'dot-error' : 'dot-running';
+  const barClass = s.type === 'success' ? 'status-success' : s.type === 'error' ? 'status-error' : 'status-running';
+  return `<div class="sql-status-bar ${barClass}" id="sql-status-${idx}"><span class="sql-status-dot ${dotClass}"></span><span class="sql-status-text">${s.text}</span></div>`;
+}
+
+/** Parse a PostgreSQL connection string into component fields */
+function parseConnString(connStr: string): { host: string; port: string; database: string; user: string; password: string } {
+  const safeDecode = (val: string) => { try { return decodeURIComponent(val); } catch { return val; } };
+  try {
+    const url = new URL(connStr);
+    return {
+      host: url.hostname || 'localhost',
+      port: url.port || '5432',
+      database: url.pathname.slice(1) || '',
+      user: url.username ? safeDecode(url.username) : '',
+      password: url.password ? safeDecode(url.password) : '',
+    };
+  } catch {
+    return { host: '', port: '5432', database: '', user: '', password: '' };
+  }
+}
+
+/** Build a PostgreSQL connection string from fields */
+function buildConnString(host: string, port: string, database: string, user: string, password: string): string {
+  const userPart = user ? (password ? `${encodeURIComponent(user)}:${encodeURIComponent(password)}` : encodeURIComponent(user)) : '';
+  const hostPart = `${host || 'localhost'}:${port || '5432'}`;
+  return `postgresql://${userPart ? userPart + '@' : ''}${hostPart}/${database}`;
+}
+
+/** Open the connection settings modal for PostgreSQL */
+function openConnectionModal(idx: number) {
+  const cell = cells[idx];
+  if (!cell) return;
+
+  // Parse existing connection string
+  let connString = cell.content;
+  if (connString.includes('||')) {
+    connString = connString.split('||').slice(1).join('||');
+  }
+  const parsed = parseConnString(connString);
+  const connName = cell.name || '';
+
+  // Remove existing modal
+  const old = document.getElementById('conn-modal-overlay');
+  if (old) old.remove();
+
+  const overlay = document.createElement('div');
+  overlay.id = 'conn-modal-overlay';
+  overlay.className = 'conn-modal-overlay';
+  overlay.innerHTML = `
+    <div class="conn-modal">
+      <div class="conn-modal-header">
+        ${DATABASE_SVG}
+        <h3>Connection Settings</h3>
+        <button class="conn-modal-close" id="conn-modal-close-btn">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+        </button>
+      </div>
+      <div class="conn-modal-body">
+        <div class="conn-modal-field">
+          <label>Connection Name</label>
+          <input type="text" id="conn-modal-name" value="${escapeHtml(connName)}" placeholder="e.g. Production DB (auto-fills from database name)" spellcheck="false" />
+        </div>
+        <div class="conn-modal-row">
+          <div class="conn-modal-field">
+            <label>Host</label>
+            <input type="text" id="conn-modal-host" value="${escapeHtml(parsed.host)}" placeholder="localhost" spellcheck="false" />
+          </div>
+          <div class="conn-modal-field field-sm">
+            <label>Port</label>
+            <input type="text" id="conn-modal-port" value="${escapeHtml(parsed.port)}" placeholder="5432" spellcheck="false" />
+          </div>
+        </div>
+        <div class="conn-modal-field">
+          <label>Database</label>
+          <input type="text" id="conn-modal-database" value="${escapeHtml(parsed.database)}" placeholder="my_database" spellcheck="false" />
+        </div>
+        <div class="conn-modal-row">
+          <div class="conn-modal-field">
+            <label>Username</label>
+            <input type="text" id="conn-modal-user" value="${escapeHtml(parsed.user)}" placeholder="postgres" spellcheck="false" />
+          </div>
+          <div class="conn-modal-field">
+            <label>Password</label>
+            <input type="password" id="conn-modal-password" value="${escapeHtml(parsed.password)}" placeholder="password" spellcheck="false" />
+          </div>
+        </div>
+        <div class="conn-modal-divider">or paste connection string</div>
+        <div class="conn-modal-field">
+          <input type="text" id="conn-modal-raw" value="${escapeHtml(connString)}" placeholder="postgresql://user:password@host:port/database" spellcheck="false" />
+        </div>
+      </div>
+      <div class="conn-modal-footer">
+        <button class="conn-modal-test-btn" id="conn-modal-test">
+          ${DATABASE_SVG} Test Connection
+        </button>
+        <span id="conn-modal-test-result" class="conn-modal-test-result"></span>
+        <button class="conn-modal-cancel-btn" id="conn-modal-cancel">Cancel</button>
+        <button class="conn-modal-save-btn" id="conn-modal-save">Save & Connect</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  // Wire up field ↔ raw string sync
+  const fieldIds = ['conn-modal-host', 'conn-modal-port', 'conn-modal-database', 'conn-modal-user', 'conn-modal-password'];
+  const rawInput = document.getElementById('conn-modal-raw') as HTMLInputElement;
+
+  function fieldsToRaw() {
+    const h = (document.getElementById('conn-modal-host') as HTMLInputElement).value;
+    const p = (document.getElementById('conn-modal-port') as HTMLInputElement).value;
+    const d = (document.getElementById('conn-modal-database') as HTMLInputElement).value;
+    const u = (document.getElementById('conn-modal-user') as HTMLInputElement).value;
+    const pw = (document.getElementById('conn-modal-password') as HTMLInputElement).value;
+    if (rawInput) rawInput.value = buildConnString(h, p, d, u, pw);
+  }
+  function rawToFields() {
+    const p = parseConnString(rawInput.value);
+    (document.getElementById('conn-modal-host') as HTMLInputElement).value = p.host;
+    (document.getElementById('conn-modal-port') as HTMLInputElement).value = p.port;
+    (document.getElementById('conn-modal-database') as HTMLInputElement).value = p.database;
+    (document.getElementById('conn-modal-user') as HTMLInputElement).value = p.user;
+    (document.getElementById('conn-modal-password') as HTMLInputElement).value = p.password;
+  }
+
+  fieldIds.forEach(id => {
+    document.getElementById(id)?.addEventListener('input', fieldsToRaw);
+  });
+  rawInput?.addEventListener('input', rawToFields);
+
+  function closeModal() { overlay.remove(); }
+  function escHandler(e: KeyboardEvent) { if (e.key === 'Escape') { closeModal(); document.removeEventListener('keydown', escHandler); } }
+  document.addEventListener('keydown', escHandler);
+  document.getElementById('conn-modal-close-btn')?.addEventListener('click', closeModal);
+  document.getElementById('conn-modal-cancel')?.addEventListener('click', closeModal);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+
+  // Test Connection
+  document.getElementById('conn-modal-test')?.addEventListener('click', () => {
+    const resultEl = document.getElementById('conn-modal-test-result');
+    const testBtn = document.getElementById('conn-modal-test') as HTMLButtonElement;
+    if (!resultEl || !testBtn) return;
+    const cs = rawInput?.value || '';
+    if (!cs.trim()) { resultEl.className = 'conn-modal-test-result test-error'; resultEl.textContent = 'Enter connection details first'; return; }
+    testBtn.disabled = true;
+    resultEl.className = 'conn-modal-test-result';
+    resultEl.innerHTML = SPINNER_SVG + ' Testing...';
+    // Send connect message, listen for result
+    const onResult = (event: any) => {
+      if (event.data.type === 'connect-result') {
+        window.removeEventListener('message', onResult);
+        testBtn.disabled = false;
+        if (event.data.success) {
+          resultEl.className = 'conn-modal-test-result test-success';
+          resultEl.textContent = 'Connected to ' + (event.data.dbName || 'database');
+          // Auto-fill name from DB name if empty
+          const nameInput = document.getElementById('conn-modal-name') as HTMLInputElement;
+          if (nameInput && !nameInput.value.trim() && event.data.dbName) {
+            nameInput.value = event.data.dbName;
+          }
+        } else {
+          resultEl.className = 'conn-modal-test-result test-error';
+          resultEl.textContent = event.data.error || 'Connection failed';
+        }
+      }
+    };
+    window.addEventListener('message', onResult);
+    vscode.postMessage({ type: 'connect', connectionString: cs, driverType: 'postgres' });
+  });
+
+  // Save & Connect
+  document.getElementById('conn-modal-save')?.addEventListener('click', () => {
+    const cs = rawInput?.value || '';
+    const name = (document.getElementById('conn-modal-name') as HTMLInputElement)?.value || '';
+    // Auto-fill name from database if empty
+    const dbName = (document.getElementById('conn-modal-database') as HTMLInputElement)?.value || '';
+    const finalName = name.trim() || dbName.trim();
+
+    cells[idx].content = 'postgres||' + cs;
+    cells[idx].name = finalName;
+    save();
+    closeModal();
+    document.removeEventListener('keydown', escHandler);
+    renderCells();
+    // Trigger connect
+    setTimeout(() => {
+      vscode.postMessage({ type: 'connect', connectionString: cs, driverType: 'postgres' });
+    }, 100);
+  });
+}
 
 
 function updateRunButtonStates() {
@@ -260,43 +478,9 @@ function updateRunButtonStates() {
 }
 
 function updateConnectionCellUI() {
-  cells.forEach((cell, idx) => {
-    if (cell.type !== 'connection') return;
-    const connRow = document.getElementById('conn-input-' + idx)?.parentElement;
-    if (!connRow) return;
-    // Find the existing button — don't create a new one (avoids duplicates)
-    const existingBtn = connRow.querySelector('button[data-action="connectDb"], button[data-action="disconnectDb"]') as HTMLButtonElement;
-    if (!existingBtn) return;
-    if (isConnected) {
-      existingBtn.style.background = 'var(--danger)';
-      existingBtn.setAttribute('data-action', 'disconnectDb');
-      existingBtn.removeAttribute('data-idx');
-      existingBtn.textContent = 'Disconnect';
-      existingBtn.disabled = false;
-      existingBtn.style.opacity = '1';
-      existingBtn.style.cursor = 'pointer';
-      existingBtn.id = '';
-    } else {
-      const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
-      const driverInp = document.getElementById('conn-driver-' + idx) as HTMLInputElement;
-      const isDuck = driverInp?.value === 'duckdb';
-      const hasValue = isDuck || (inp && !!inp.value.trim());
-      existingBtn.style.background = '';
-      existingBtn.id = 'conn-btn-' + idx;
-      existingBtn.setAttribute('data-action', 'connectDb');
-      existingBtn.setAttribute('data-idx', idx.toString());
-      existingBtn.textContent = 'Connect';
-      if (!hasValue) {
-        existingBtn.disabled = true;
-        existingBtn.style.opacity = '0.4';
-        existingBtn.style.cursor = 'not-allowed';
-      } else {
-        existingBtn.disabled = false;
-        existingBtn.style.opacity = '1';
-        existingBtn.style.cursor = 'pointer';
-      }
-    }
-  });
+  // The redesigned connection card renders different markup for connected vs disconnected states,
+  // so we re-render the cells to show the appropriate layout.
+  renderCells();
 }
 
 function renderApp() {
@@ -336,15 +520,28 @@ function renderCells() {
 
   cells.forEach((cell, idx) => {
     const cellEl = document.createElement('div');
-    cellEl.className = 'cell';
+    cellEl.className = 'cell' + (cell._collapsed ? ' collapsed' : '');
     cellEl.dataset.index = idx.toString();
 
     const meta = CELL_TYPES[cell.type] || { label: 'Unknown', badgeClass: '', needsConnection: false };
     const disabledAttr = (!isConnected && meta.needsConnection) ? ' disabled' : '';
+    const isSystemCell = cell.type === 'connection' || cell.type === 'schema';
 
     // 1. Toolbar — badge from registry, actions, and status — consistent for ALL cell types
     let toolbar = '<div class="cell-toolbar">';
+
+    // Collapse chevron for non-system cells
+    if (!isSystemCell) {
+      const chevronClass = cell._collapsed ? 'collapsed' : '';
+      toolbar += `<button class="cell-collapse-btn" data-action="toggleCollapse" data-idx="${idx}" title="${cell._collapsed ? 'Expand' : 'Collapse'}"><span class="cell-collapse-chevron ${chevronClass}">${CHEVRON_DOWN_SVG}</span></button>`;
+    }
+
     toolbar += `<div class="cell-badge ${meta.badgeClass}">${meta.label}</div>`;
+
+    // Show summary when collapsed
+    if (cell._collapsed) {
+      toolbar += `<span class="cell-collapse-summary">${escapeHtml(getCollapseSummary(cell, idx))}</span>`;
+    }
 
     // Per-type inline controls (name input, source table dropdown, etc.)
     if (cell.type === 'sql' || cell.type === 'connection') {
@@ -405,8 +602,7 @@ function renderCells() {
       toolbar += '<button class="btn-action btn-run" data-action="summaryRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Profile</button>';
     }
 
-    // System cells (connection, schema) cannot be deleted or moved
-    const isSystemCell = cell.type === 'connection' || cell.type === 'schema';
+    // System cells (connection, schema) cannot be deleted or moved (isSystemCell declared above)
     if (!isSystemCell) {
       if (idx > 0) toolbar += '<button class="btn-icon" data-action="moveCellUp" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="19" x2="12" y2="5"></line><polyline points="5 12 12 5 19 12"></polyline></svg></button>';
       if (idx < cells.length - 1) toolbar += '<button class="btn-icon" data-action="moveCellDown" data-idx="' + idx + '"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><polyline points="19 12 12 19 5 12"></polyline></svg></button>';
@@ -428,30 +624,55 @@ function renderCells() {
       } else if (cell.content.startsWith('postgres://') || cell.content.startsWith('postgresql://')) {
         storedDriver = 'postgres';
       }
-      const pgPlaceholder = 'postgresql://user:password@localhost:5432/dbname';
-      const duckPlaceholder = 'Leave empty for in-memory, or enter path to .db file';
-      const placeholder = storedDriver === 'duckdb' ? duckPlaceholder : pgPlaceholder;
       const isDuck = storedDriver === 'duckdb';
-      content += '<div class="conn-form"><div class="conn-row" style="display:flex; gap:8px; align-items:center;">';
-      content += `<div class="conn-driver-toggle" id="conn-toggle-container-${idx}" style="display:flex; background:var(--bg-surface-inset); border:1px solid var(--border-color); border-radius:6px; overflow:hidden; padding:2px; gap:2px;">
-        <button type="button" class="conn-driver-btn" data-driver="duckdb" style="padding:5px 14px; border:none; background:${isDuck ? 'var(--primary)' : 'transparent'}; color:${isDuck ? '#fff' : 'var(--text-muted)'}; cursor:pointer; font-size:12px; font-weight:${isDuck ? '600' : '400'}; border-radius:4px; transition:all 0.15s;">Local Files</button>
-        <button type="button" class="conn-driver-btn" data-driver="postgres" style="padding:5px 14px; border:none; background:${!isDuck ? 'var(--primary)' : 'transparent'}; color:${!isDuck ? '#fff' : 'var(--text-muted)'}; cursor:pointer; font-size:12px; font-weight:${!isDuck ? '600' : '400'}; border-radius:4px; transition:all 0.15s;">PostgreSQL</button>
-      </div>`;
-      content += `<input type="hidden" id="conn-driver-${idx}" value="${escapeHtml(storedDriver)}" />`;
-      content += '<input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(connString) + '" placeholder="' + placeholder + '" spellcheck="false" list="recent-conns-' + idx + '" style="flex:1;' + (isDuck && !connString ? 'opacity:0.7;' : '') + '" />';
-      content += '<datalist id="recent-conns-' + idx + '">' + recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('') + '</datalist>';
+      content += '<div class="conn-card">';
+
+      // Status banner
       if (isConnected) {
-        content += '<button class="btn-primary" style="background:var(--danger)" data-action="disconnectDb">Disconnect</button>';
+        const displayName = cell.name || dbName || 'Database';
+        const driverLabel = driverType === 'duckdb' ? 'DuckDB' : 'PostgreSQL';
+        let metaText = driverLabel;
+        if (driverType === 'postgres' && connString) {
+          try { const u = new URL(connString); metaText = driverLabel + ' -- ' + u.hostname + ':' + (u.port || '5432'); } catch {}
+        }
+        content += `<div class="conn-status-banner status-connected"><span class="conn-status-dot dot-connected"></span><div class="conn-status-info"><div class="conn-status-db">${escapeHtml(displayName)}</div><div class="conn-status-meta">${escapeHtml(metaText)}</div></div><button class="btn-primary" style="background:var(--danger);padding:7px 16px;font-size:12px;" data-action="disconnectDb">Disconnect</button></div>`;
       } else {
-        // DuckDB allows empty conn string (in-memory), so always enable for duckdb
-        const hasValue = isDuck || !!connString.trim();
-        const connDisabled = !hasValue ? ' disabled style="opacity:0.4;cursor:not-allowed;"' : '';
-        content += '<button class="btn-primary" id="conn-btn-' + idx + '" data-action="connectDb" data-idx="' + idx + '"' + connDisabled + '>Connect</button>';
+        content += `<div class="conn-status-banner status-disconnected"><span class="conn-status-dot dot-disconnected"></span><span>Not Connected</span></div>`;
       }
-      content += '</div><div id="conn-msg-' + idx + '" style="font-size:13px; margin-top:8px;"></div></div>';
+
+      // Driver toggle
+      if (!isConnected) {
+        content += `<div class="conn-driver-toggle-group" id="conn-toggle-container-${idx}">`;
+        content += `<button type="button" class="conn-driver-option${isDuck ? ' active' : ''}" data-driver="duckdb">Local Files (DuckDB)</button>`;
+        content += `<button type="button" class="conn-driver-option${!isDuck ? ' active' : ''}" data-driver="postgres">PostgreSQL</button>`;
+        content += '</div>';
+        content += `<input type="hidden" id="conn-driver-${idx}" value="${escapeHtml(storedDriver)}" />`;
+
+        if (isDuck) {
+          // DuckDB: simple path input
+          content += '<input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(connString) + '" placeholder="Leave empty for in-memory, or enter path to .db file" spellcheck="false" list="recent-conns-' + idx + '" style="width:100%;' + (!connString ? 'opacity:0.7;' : '') + '" />';
+          content += '<datalist id="recent-conns-' + idx + '">' + recentConnections.map(c => `<option value="${escapeHtml(c)}"></option>`).join('') + '</datalist>';
+          content += `<div class="conn-actions-row"><button class="btn-primary" id="conn-btn-${idx}" data-action="connectDb" data-idx="${idx}">Connect</button></div>`;
+        } else {
+          // PostgreSQL: configure button that opens modal
+          content += `<input type="hidden" id="conn-input-${idx}" value="${escapeHtml(connString)}" />`;
+          content += `<button class="conn-configure-btn" data-action="openConnModal" data-idx="${idx}">${SETTINGS_SVG} Configure Connection</button>`;
+          if (connString.trim()) {
+            // Show current connection string summary
+            let summary = '';
+            try { const u = new URL(connString); summary = u.username + '@' + u.hostname + ':' + (u.port || '5432') + u.pathname; } catch { summary = connString.substring(0, 50); }
+            content += `<div style="margin-top:8px;font-size:12px;color:var(--text-muted);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(summary)}</div>`;
+            content += `<div class="conn-actions-row"><button class="btn-primary" id="conn-btn-${idx}" data-action="connectDb" data-idx="${idx}">Connect</button></div>`;
+          }
+        }
+      }
+      content += '<div id="conn-msg-' + idx + '" style="font-size:13px; margin-top:8px;"></div></div>';
     } 
     else if (cell.type === 'sql') {
       content += '<div class="sql-editor" id="sql-container-' + idx + '"><div style="padding:10px;color:#888;">Loading editor...</div></div>';
+
+      // SQL status bar (green/red indicator between editor and output)
+      content += buildSqlStatusBar(idx, cell);
 
       content += '<div id="output-' + idx + '">';
       if (cell._output) {
@@ -522,23 +743,15 @@ function renderCells() {
       const driverInp = document.getElementById('conn-driver-' + idx) as HTMLInputElement;
       const toggleContainer = document.getElementById('conn-toggle-container-' + idx);
 
-      if (toggleContainer && driverInp && inp) {
-        toggleContainer.querySelectorAll('.conn-driver-btn').forEach(btn => {
+      if (toggleContainer && driverInp) {
+        toggleContainer.querySelectorAll('.conn-driver-option').forEach(btn => {
           btn.addEventListener('click', () => {
             const drv = btn.getAttribute('data-driver') || 'postgres';
             driverInp.value = drv;
-            // update UI
-            toggleContainer.querySelectorAll('.conn-driver-btn').forEach(b => {
-              const isActive = b.getAttribute('data-driver') === drv;
-              (b as HTMLElement).style.background = isActive ? 'var(--primary)' : 'transparent';
-              (b as HTMLElement).style.color = isActive ? '#fff' : 'var(--text-muted)';
-              (b as HTMLElement).style.fontWeight = isActive ? '600' : '400';
-            });
-            inp.placeholder = drv === 'duckdb' 
-              ? '/path/to/database.db  (leave empty for in-memory)' 
-              : 'postgresql://user:password@localhost:5432/dbname';
-            saveConnContent();
-            updateConnBtnState();
+            // Save driver change and re-render to show appropriate fields
+            cells[idx].content = drv + '||' + (inp?.value || '');
+            save();
+            renderCells();
           });
         });
       }
@@ -549,20 +762,9 @@ function renderCells() {
         save();
       }
 
-      function updateConnBtnState() {
-        const connBtn = document.getElementById('conn-btn-' + idx) as HTMLButtonElement;
-        if (!connBtn || !inp || !driverInp) return;
-        const isDuck = driverInp.value === 'duckdb';
-        const hasValue = isDuck || !!inp.value.trim();
-        connBtn.disabled = !hasValue;
-        connBtn.style.opacity = hasValue ? '1' : '0.4';
-        connBtn.style.cursor = hasValue ? 'pointer' : 'not-allowed';
-      }
-
       if (inp) {
         inp.addEventListener('input', () => {
           saveConnContent();
-          updateConnBtnState();
         });
         inp.addEventListener('keydown', (e) => {
           if (e.key === 'Enter') {
@@ -1038,6 +1240,9 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   const queryToRun = selectedText || cell.content;
 
   cell._output = '<div class="output-area"><div class="output-meta">' + SPINNER_SVG + ' Running... <button class="btn-action" style="margin-left:auto;color:var(--danger);" data-action="cancelSql"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>Cancel</button></div></div>';
+  cell._lastStatus = { type: 'running', text: 'Running...' };
+  const statusEl = document.getElementById('sql-status-' + idx);
+  if (statusEl) statusEl.outerHTML = buildSqlStatusBar(idx, cell);
   const outputEl = document.getElementById('output-' + idx);
   if (outputEl) outputEl.innerHTML = cell._output;
   vscode.postMessage({ type: 'execute-sql', cellIndex: idx, cellName: cellName, query: queryToRun });
@@ -1468,10 +1673,19 @@ window.addEventListener('message', event => {
     driverType = msg.driverType || '';
     (window as any)._sqlnbDriverType = driverType;
 
-    updateConnectionCellUI();
+    // Save connection name from dbName if cell has no name yet
+    if (msg.success) {
+      const connIdx = cells.findIndex((c: any) => c.type === 'connection');
+      if (connIdx >= 0 && !cells[connIdx].name && msg.dbName) {
+        cells[connIdx].name = msg.dbName;
+        save();
+      }
+    }
+
+    updateConnectionCellUI(); // This re-renders cells
     updateRunButtonStates();
     
-    // Show connection message
+    // Show connection message (after re-render so the DOM element exists)
     const connIdx = cells.findIndex((c: any) => c.type === 'connection');
     if (connIdx >= 0) {
        const msgEl = document.getElementById('conn-msg-' + connIdx);
@@ -1479,7 +1693,7 @@ window.addEventListener('message', event => {
            if (msg.error) {
                msgEl.innerHTML = '<span style="color:var(--danger);">' + escapeHtml(msg.error) + '</span>';
            } else if (msg.success) {
-               msgEl.innerHTML = '<span style="color:var(--success);">Connected to ' + escapeHtml(msg.dbName || 'db') + '</span>';
+               msgEl.innerHTML = '';
            }
        }
     }
@@ -1560,6 +1774,18 @@ window.addEventListener('message', event => {
     outputHtml += '</div>';
     cells[idx]._output = outputHtml;
     cells[idx]._outputData = msg;
+
+    // Update SQL status bar
+    if (msg.error) {
+      const shortErr = (msg.error as string).split('\n')[0].substring(0, 80);
+      cells[idx]._lastStatus = { type: 'error', text: `<strong>ERROR</strong> ${escapeHtml(shortErr)}${ms ? ' -- ' + ms : ''}` };
+    } else {
+      const rowCount = msg.rows ? msg.rows.length : (msg.rowCount || 0);
+      cells[idx]._lastStatus = { type: 'success', text: `<strong>OK</strong> -- ${rowCount} row${rowCount !== 1 ? 's' : ''}${ms ? ' -- ' + ms : ''}` };
+    }
+    const statusEl = document.getElementById('sql-status-' + idx);
+    if (statusEl) statusEl.outerHTML = buildSqlStatusBar(idx, cells[idx]);
+
     const outputEl = document.getElementById('output-' + idx);
     if (outputEl) {
       outputEl.innerHTML = outputHtml;
@@ -1747,6 +1973,15 @@ document.addEventListener('click', (e) => {
   else if (action === 'deleteCell') (window as any).deleteCell(idx);
   else if (action === 'moveCellUp') (window as any).moveCell(idx, -1);
   else if (action === 'moveCellDown') (window as any).moveCell(idx, 1);
+  else if (action === 'toggleCollapse') {
+    if (idx >= 0 && idx < cells.length) {
+      cells[idx]._collapsed = !cells[idx]._collapsed;
+      renderCells();
+    }
+  }
+  else if (action === 'openConnModal') {
+    openConnectionModal(idx);
+  }
   else if (action === 'summaryRun') { if (!isConnected) return; (window as any).summaryRun(idx); }
   else if (action === 'summaryRefresh') { if (!isConnected) return; (window as any).summaryRefresh(idx); }
   else if (action === 'chartRun') { if (!isConnected) return; (window as any).chartRun(idx); }

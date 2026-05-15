@@ -1408,3 +1408,504 @@ button[disabled] {
   display: block;
 }
 
+/* ═══════════════════════════════════════════════════
+   Collapsible Blocks
+   ═══════════════════════════════════════════════════ */
+
+.cell-collapse-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.15s ease;
+  flex-shrink: 0;
+  margin-right: 4px;
+}
+
+.cell-collapse-btn:hover {
+  background: var(--bg-surface-inset);
+  color: var(--text-main);
+}
+
+.cell-collapse-chevron {
+  transition: transform 0.2s ease;
+  display: flex;
+  align-items: center;
+}
+
+.cell-collapse-chevron.collapsed {
+  transform: rotate(-90deg);
+}
+
+.cell.collapsed .cell-content {
+  display: none;
+}
+
+.cell.collapsed {
+  border-radius: var(--border-radius-md);
+}
+
+.cell.collapsed .cell-toolbar {
+  border-bottom: none;
+  border-radius: var(--border-radius-md);
+}
+
+.cell-collapse-summary {
+  font-size: 12px;
+  color: var(--text-subtle);
+  margin-left: 8px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 300px;
+  font-family: var(--font-mono);
+}
+
+/* ═══════════════════════════════════════════════════
+   SQL Execution Status Bar
+   ═══════════════════════════════════════════════════ */
+
+.sql-status-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  font-size: 12px;
+  font-family: var(--font-sans);
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-surface-hover);
+  min-height: 32px;
+  transition: background 0.2s ease;
+}
+
+.sql-status-bar.status-success {
+  background: color-mix(in srgb, var(--success) 6%, var(--bg-surface-hover) 94%);
+  border-top-color: color-mix(in srgb, var(--success) 20%, var(--border-color) 80%);
+}
+
+.sql-status-bar.status-error {
+  background: color-mix(in srgb, var(--danger) 6%, var(--bg-surface-hover) 94%);
+  border-top-color: color-mix(in srgb, var(--danger) 20%, var(--border-color) 80%);
+}
+
+.sql-status-bar.status-running {
+  background: color-mix(in srgb, var(--warning) 6%, var(--bg-surface-hover) 94%);
+  border-top-color: color-mix(in srgb, var(--warning) 20%, var(--border-color) 80%);
+}
+
+.sql-status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sql-status-dot.dot-success {
+  background: var(--success);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--success) 40%, transparent 60%);
+}
+
+.sql-status-dot.dot-error {
+  background: var(--danger);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 40%, transparent 60%);
+}
+
+.sql-status-dot.dot-running {
+  background: var(--warning);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--warning) 40%, transparent 60%);
+  animation: statusPulse 1.5s ease-in-out infinite;
+}
+
+@keyframes statusPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.sql-status-text {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.sql-status-text strong {
+  color: var(--text-main);
+  font-weight: 600;
+}
+
+/* ═══════════════════════════════════════════════════
+   Connection Card (Redesigned)
+   ═══════════════════════════════════════════════════ */
+
+.conn-card {
+  padding: 20px;
+}
+
+.conn-status-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: var(--border-radius-sm);
+  margin-bottom: 16px;
+  font-size: 13px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.conn-status-banner.status-disconnected {
+  background: color-mix(in srgb, var(--warning) 8%, var(--bg-surface-inset) 92%);
+  border: 1px solid color-mix(in srgb, var(--warning) 25%, var(--border-color) 75%);
+  color: var(--text-muted);
+}
+
+.conn-status-banner.status-connected {
+  background: color-mix(in srgb, var(--success) 8%, var(--bg-surface-inset) 92%);
+  border: 1px solid color-mix(in srgb, var(--success) 30%, var(--border-color) 70%);
+  color: var(--text-main);
+}
+
+.conn-status-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.conn-status-dot.dot-disconnected {
+  background: var(--warning);
+  opacity: 0.7;
+}
+
+.conn-status-dot.dot-connected {
+  background: var(--success);
+  box-shadow: 0 0 8px color-mix(in srgb, var(--success) 50%, transparent 50%);
+}
+
+.conn-status-info {
+  flex: 1;
+}
+
+.conn-status-db {
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+.conn-status-meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 2px;
+}
+
+.conn-driver-toggle-group {
+  display: flex;
+  background: var(--bg-surface-inset);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  padding: 3px;
+  gap: 3px;
+  margin-bottom: 16px;
+}
+
+.conn-driver-option {
+  flex: 1;
+  padding: 8px 16px;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  border-radius: 6px;
+  transition: all 0.2s ease;
+  text-align: center;
+}
+
+.conn-driver-option:hover {
+  background: var(--bg-surface-hover);
+  color: var(--text-main);
+}
+
+.conn-driver-option.active {
+  background: var(--primary);
+  color: #fff;
+  font-weight: 600;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
+}
+
+.conn-actions-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+.conn-configure-btn {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: 1px dashed var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  transition: all 0.2s ease;
+}
+
+.conn-configure-btn:hover {
+  border-color: var(--primary);
+  color: var(--primary);
+  background: var(--primary-light);
+  border-style: solid;
+}
+
+/* ═══════════════════════════════════════════════════
+   Connection Modal
+   ═══════════════════════════════════════════════════ */
+
+@keyframes connModalFadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes connModalSlideUp {
+  from { opacity: 0; transform: translateY(20px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.conn-modal-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 100000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(0, 0, 0, 0.45);
+  backdrop-filter: blur(4px);
+  animation: connModalFadeIn 0.2s ease;
+}
+
+.conn-modal {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-lg);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
+  width: 520px;
+  max-width: 95vw;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  animation: connModalSlideUp 0.25s ease;
+}
+
+.conn-modal-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 16px 20px;
+  background: var(--bg-surface-hover);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.conn-modal-header h3 {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text-main);
+  margin: 0;
+  flex: 1;
+}
+
+.conn-modal-close {
+  background: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--text-muted);
+  width: 28px;
+  height: 28px;
+  border-radius: 6px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.conn-modal-close:hover {
+  background: var(--danger-light);
+  border-color: var(--danger);
+  color: var(--danger);
+}
+
+.conn-modal-body {
+  padding: 20px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.conn-modal-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.conn-modal-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+  letter-spacing: 0.3px;
+}
+
+.conn-modal-field input {
+  padding: 9px 12px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--text-main);
+  background: var(--bg-surface);
+  outline: none;
+  transition: all 0.2s;
+}
+
+.conn-modal-field input:focus {
+  border-color: var(--primary);
+  box-shadow: 0 0 0 2px var(--primary-light);
+}
+
+.conn-modal-field input::placeholder {
+  color: var(--text-subtle);
+  font-family: var(--font-sans);
+}
+
+.conn-modal-row {
+  display: flex;
+  gap: 12px;
+}
+
+.conn-modal-row .conn-modal-field {
+  flex: 1;
+}
+
+.conn-modal-row .conn-modal-field.field-sm {
+  flex: 0 0 100px;
+}
+
+.conn-modal-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 4px 0;
+  color: var(--text-subtle);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.conn-modal-divider::before,
+.conn-modal-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-color);
+}
+
+.conn-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-surface-hover);
+}
+
+.conn-modal-test-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: var(--bg-surface);
+  color: var(--text-main);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+}
+
+.conn-modal-test-btn:hover {
+  border-color: var(--primary);
+  background: var(--primary-light);
+  color: var(--primary);
+}
+
+.conn-modal-test-result {
+  font-size: 12px;
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.conn-modal-test-result.test-success {
+  color: var(--success);
+}
+
+.conn-modal-test-result.test-error {
+  color: var(--danger);
+}
+
+.conn-modal-save-btn {
+  margin-left: auto;
+  padding: 8px 20px;
+  border: none;
+  border-radius: var(--border-radius-sm);
+  background: var(--primary);
+  color: #fff;
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+}
+
+.conn-modal-save-btn:hover {
+  background: var(--primary-hover);
+}
+
+.conn-modal-cancel-btn {
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--border-radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 13px;
+  font-weight: 500;
+  font-family: var(--font-sans);
+  transition: all 0.15s;
+}
+
+.conn-modal-cancel-btn:hover {
+  background: var(--bg-surface-inset);
+  color: var(--text-main);
+}
+
