@@ -243,7 +243,7 @@ function buildInsertDivider(pos: number): string {
 
 
 function updateRunButtonStates() {
-  const actions = ['runSql', 'chartRun', 'chartRefresh', 'summaryRun', 'schemaRun'];
+  const actions = ['runSql', 'chartRun', 'chartRefresh', 'summaryRun', 'summaryRefresh', 'schemaRun'];
   actions.forEach(action => {
     document.querySelectorAll(`button[data-action="${action}"]`).forEach((btn: any) => {
       btn.disabled = !isConnected;
@@ -356,15 +356,18 @@ function renderCells() {
       let state: any = {};
       try { state = JSON.parse(cell.content || '{}'); } catch {}
       const ds = state.ds || `table_${idx > 0 ? idx - 1 : 0}`;
-      const tableKeys = Object.keys(columnCache);
+      // Build dropdown from live SQL cell names only (avoids stale entries)
+      const liveSummaryTableKeys = cells
+        .map((c, i) => c.type === 'sql' ? (c.name || `table_${i}`) : null)
+        .filter((n): n is string => n !== null);
       let dsOptions = '';
-      if (tableKeys.length === 0) {
+      if (liveSummaryTableKeys.length === 0) {
         dsOptions = `<option value="${escapeHtml(ds)}" selected>${escapeHtml(ds)}</option>`;
       } else {
-        if (!tableKeys.includes(ds)) {
+        if (!liveSummaryTableKeys.includes(ds)) {
           dsOptions += `<option value="${escapeHtml(ds)}" selected>${escapeHtml(ds)}</option>`;
         }
-        dsOptions += tableKeys.map(k => `<option value="${escapeHtml(k)}" ${k === ds ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('');
+        dsOptions += liveSummaryTableKeys.map(k => `<option value="${escapeHtml(k)}" ${k === ds ? 'selected' : ''}>${escapeHtml(k)}</option>`).join('');
       }
       toolbar += '<label style="display:flex;align-items:center;gap:6px;margin-left:8px;font-size:12px;color:var(--text-muted);font-weight:500;">Source <select id="summary-ds-' + idx + '" class="sqlnb-select" style="width:140px;font-size:12px;padding:3px 8px;">' + dsOptions + '</select></label>';
     }
@@ -383,8 +386,8 @@ function renderCells() {
     // Action buttons — consistent placement for all cell types
     if (cell.type === 'sql') {
       toolbar += '<button class="btn-action btn-run" data-action="runSql" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Run</button>';
-      toolbar += '<button class="btn-action" data-action="prettifySql" data-idx="' + idx + '" title="Format SQL"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-1px;"><polyline points="4 7 4 4 20 4 20 7"/><line x1="9" y1="20" x2="15" y2="20"/><line x1="12" y1="4" x2="12" y2="20"/></svg></button>';
-      toolbar += '<button class="btn-icon" data-action="toggleWiki" data-idx="' + idx + '" title="SQL Wiki / Reference"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"/></svg></button>';
+      toolbar += '<button class="btn-action" data-action="prettifySql" data-idx="' + idx + '" title="Format SQL">Prettify SQL</button>';
+      toolbar += '<button class="btn-action" data-action="toggleWiki" data-idx="' + idx + '" title="SQL Wiki / Reference">Wiki</button>';
     }
     if (cell.type === 'schema') {
       toolbar += '<button class="btn-action btn-run" data-action="schemaRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
@@ -394,6 +397,7 @@ function renderCells() {
       toolbar += '<button class="btn-action btn-run" data-action="chartRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Render</button>';
     }
     if (cell.type === 'summary') {
+      toolbar += '<button class="btn-action btn-run" data-action="summaryRefresh" data-idx="' + idx + '"' + disabledAttr + ' title="Re-run source SQL and refresh profiler data"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="vertical-align:-1px; margin-right:4px;"><path d="M21.5 2v6h-6M2.5 22v-6h6M2 11.5a10 10 0 0 1 18.8-4.3M22 12.5a10 10 0 0 1-18.8 4.2"></path></svg>Refresh</button>';
       toolbar += '<button class="btn-action btn-run" data-action="summaryRun" data-idx="' + idx + '"' + disabledAttr + '><svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor" style="vertical-align:-1px; margin-right:4px;"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>Profile</button>';
     }
 
@@ -425,9 +429,9 @@ function renderCells() {
       const placeholder = storedDriver === 'duckdb' ? duckPlaceholder : pgPlaceholder;
       const isDuck = storedDriver === 'duckdb';
       content += '<div class="conn-form"><div class="conn-row" style="display:flex; gap:8px; align-items:center;">';
-      content += `<div class="conn-driver-toggle" id="conn-toggle-container-${idx}" style="display:flex; background:var(--vscode-input-background); border:1px solid var(--vscode-input-border); border-radius:4px; overflow:hidden;">
-        <button type="button" class="conn-driver-btn" data-driver="duckdb" style="padding:4px 12px; border:none; background:${isDuck ? 'var(--button-bg)' : 'transparent'}; color:var(--text-color); cursor:pointer; font-size:12px; font-weight:${isDuck ? '600' : '400'};">Local Files</button>
-        <button type="button" class="conn-driver-btn" data-driver="postgres" style="padding:4px 12px; border:none; background:${!isDuck ? 'var(--button-bg)' : 'transparent'}; color:var(--text-color); cursor:pointer; border-left:1px solid var(--vscode-input-border); font-size:12px; font-weight:${!isDuck ? '600' : '400'};">PostgreSQL</button>
+      content += `<div class="conn-driver-toggle" id="conn-toggle-container-${idx}" style="display:flex; background:var(--bg-surface-inset); border:1px solid var(--border-color); border-radius:6px; overflow:hidden; padding:2px; gap:2px;">
+        <button type="button" class="conn-driver-btn" data-driver="duckdb" style="padding:5px 14px; border:none; background:${isDuck ? 'var(--primary)' : 'transparent'}; color:${isDuck ? '#fff' : 'var(--text-muted)'}; cursor:pointer; font-size:12px; font-weight:${isDuck ? '600' : '400'}; border-radius:4px; transition:all 0.15s;">Local Files</button>
+        <button type="button" class="conn-driver-btn" data-driver="postgres" style="padding:5px 14px; border:none; background:${!isDuck ? 'var(--primary)' : 'transparent'}; color:${!isDuck ? '#fff' : 'var(--text-muted)'}; cursor:pointer; font-size:12px; font-weight:${!isDuck ? '600' : '400'}; border-radius:4px; transition:all 0.15s;">PostgreSQL</button>
       </div>`;
       content += `<input type="hidden" id="conn-driver-${idx}" value="${escapeHtml(storedDriver)}" />`;
       content += '<input type="text" id="conn-input-' + idx + '" class="conn-input" value="' + escapeHtml(connString) + '" placeholder="' + placeholder + '" spellcheck="false" list="recent-conns-' + idx + '" style="flex:1;' + (isDuck && !connString ? 'opacity:0.7;' : '') + '" />';
@@ -515,7 +519,10 @@ function renderCells() {
             driverInp.value = drv;
             // update UI
             toggleContainer.querySelectorAll('.conn-driver-btn').forEach(b => {
-              (b as HTMLElement).style.background = b.getAttribute('data-driver') === drv ? 'var(--button-bg)' : 'transparent';
+              const isActive = b.getAttribute('data-driver') === drv;
+              (b as HTMLElement).style.background = isActive ? 'var(--primary)' : 'transparent';
+              (b as HTMLElement).style.color = isActive ? '#fff' : 'var(--text-muted)';
+              (b as HTMLElement).style.fontWeight = isActive ? '600' : '400';
             });
             inp.placeholder = drv === 'duckdb' 
               ? '/path/to/database.db  (leave empty for in-memory)' 
@@ -886,6 +893,50 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   });
 };
 
+(window as any).summaryRefresh = (idx: number) => {
+  const cell = cells[idx];
+  if (!cell) return;
+  
+  const dsKey = (document.getElementById(`summary-ds-${idx}`) as HTMLSelectElement)?.value || 'table_0';
+  const status = document.getElementById('summary-status-' + idx);
+  if (status) status.innerHTML = processingHtml('Refreshing source data...');
+  
+  // Find the SQL cell that matches this dataset key
+  const sqlIdx = cells.findIndex((c, i) => c.type === 'sql' && (c.name || `table_${i}`) === dsKey);
+  if (sqlIdx < 0) {
+    if (status) status.innerHTML = '<span style="color:var(--danger)">Source table "' + escapeHtml(dsKey) + '" not found</span>';
+    return;
+  }
+  
+  // Re-run the SQL cell — the sql-result handler will update columnCache,
+  // then we set up a one-time listener to auto-profile
+  const onRefreshResult = (event: any) => {
+    const msg = event.data;
+    if (msg.type === 'sql-result' && msg.cellIndex === sqlIdx) {
+      window.removeEventListener('message', onRefreshResult);
+      // Update source table dropdown options from live SQL cell names
+      const dsSelect = document.getElementById(`summary-ds-${idx}`) as HTMLSelectElement;
+      if (dsSelect) {
+        const currentDs = dsSelect.value;
+        const liveTableKeys = cells
+          .map((c, i) => c.type === 'sql' ? (c.name || `table_${i}`) : null)
+          .filter((n): n is string => n !== null);
+        let dsOptions = '';
+        liveTableKeys.forEach(k => {
+          dsOptions += `<option value="${escapeHtml(k)}" ${k === currentDs ? 'selected' : ''}>${escapeHtml(k)}</option>`;
+        });
+        unwrapCustomSelect(dsSelect);
+        dsSelect.innerHTML = dsOptions;
+        setTimeout(() => initCustomSelects(), 10);
+      }
+      // Auto-profile with updated data
+      setTimeout(() => (window as any).summaryRun(idx), 50);
+    }
+  };
+  window.addEventListener('message', onRefreshResult);
+  (window as any).runSql(sqlIdx);
+};
+
 (window as any).deleteCell = (idx: number) => {
   if (cells[idx]?.type === 'connection' || cells[idx]?.type === 'schema') return; // Cannot delete system cells
   // Clean up columnCache entry for this cell to prevent stale data (BUG-6)
@@ -945,9 +996,12 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
     const formatted = formatSql(currentValue, {
       language: lang,
       tabWidth: 2,
+      indentStyle: 'standard',
       keywordCase: 'upper',
       dataTypeCase: 'upper',
       functionCase: 'upper',
+      logicalOperatorNewline: 'before',
+      linesBetweenQueries: 1,
     });
     model.setValue(formatted);
     cells[idx].content = formatted;
@@ -1479,6 +1533,13 @@ window.addEventListener('message', event => {
     } else if (msg.rows && msg.rows.length > 0) {
       if (msg.fields) {
         const cellName = cells[idx].name || `table_${idx}`;
+        // Clean up stale columnCache entries: if this cell was previously stored
+        // under a different name (e.g. user renamed the block), remove the old key
+        const allCacheKeys = Object.keys(columnCache);
+        const liveCellNames = new Set(cells.map((c, i) => c.type === 'sql' ? (c.name || `table_${i}`) : null).filter(Boolean));
+        allCacheKeys.forEach(k => {
+          if (!liveCellNames.has(k)) delete columnCache[k];
+        });
         columnCache[cellName] = msg.fields.map((f: any) => f.name);
       }
       outputHtml += renderAdvancedTableHtml(idx, msg, escapeHtml);
@@ -1677,6 +1738,7 @@ document.addEventListener('click', (e) => {
   else if (action === 'moveCellUp') (window as any).moveCell(idx, -1);
   else if (action === 'moveCellDown') (window as any).moveCell(idx, 1);
   else if (action === 'summaryRun') { if (!isConnected) return; (window as any).summaryRun(idx); }
+  else if (action === 'summaryRefresh') { if (!isConnected) return; (window as any).summaryRefresh(idx); }
   else if (action === 'chartRun') { if (!isConnected) return; (window as any).chartRun(idx); }
   else if (action === 'chartRefresh') { if (!isConnected) return; (window as any).chartRefresh(idx); }
   else if (action === 'schemaRun') { if (!isConnected) return; (window as any).schemaLoad(idx); }

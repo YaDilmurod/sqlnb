@@ -320,8 +320,8 @@ export function handleSchemaLoadResult(msg: any, escapeHtml: (s: any) => string)
     // Table-level toggles (expand/collapse columns)
     content.querySelectorAll('.sch-table-header').forEach((header: any) => {
         header.addEventListener('click', (e: any) => {
-            // Don't toggle if the preview button was clicked
-            if ((e.target as any).closest('.sch-preview-btn')) return;
+            // Don't toggle if the preview or DDL button was clicked
+            if ((e.target as any).closest('.sch-preview-btn') || (e.target as any).closest('.sch-ddl-btn')) return;
             e.stopPropagation();
             const item = header.closest('.sch-table-item');
             const cols = item?.querySelector('.sch-table-columns');
@@ -350,12 +350,145 @@ export function handleSchemaLoadResult(msg: any, escapeHtml: (s: any) => string)
     content.querySelectorAll('.sch-ddl-btn').forEach((btn: any) => {
         btn.addEventListener('click', (e: any) => {
             e.stopPropagation();
-            // Handled via event delegation in main.ts (data-action="viewDdl")
+            const tableName = btn.getAttribute('data-table-name') || '';
+            const tableType = btn.getAttribute('data-table-type') || '';
+            const schemaName = btn.getAttribute('data-schema-name') || 'public';
+            (window as any).vscode.postMessage({ type: 'view-ddl', tableName, tableType, schemaName });
         });
     });
 }
 
-/** Handle the DDL result from provider and show it in a modal */
+/**
+ * Apply basic SQL syntax highlighting to DDL text.
+ * Wraps SQL keywords, functions, types, and strings in colored spans.
+ */
+function highlightSql(ddl: string, escapeHtml: (s: any) => string): string {
+    // Tokenize: split by strings, identifiers, and words while preserving whitespace
+    const tokens: string[] = [];
+    let i = 0;
+    while (i < ddl.length) {
+        // Single-quoted string literals
+        if (ddl[i] === "'") {
+            let j = i + 1;
+            while (j < ddl.length && !(ddl[j] === "'" && ddl[j + 1] !== "'")) {
+                if (ddl[j] === "'" && ddl[j + 1] === "'") j += 2;
+                else j++;
+            }
+            tokens.push(ddl.slice(i, j + 1));
+            i = j + 1;
+        }
+        // Double-quoted identifiers
+        else if (ddl[i] === '"') {
+            let j = i + 1;
+            while (j < ddl.length && ddl[j] !== '"') j++;
+            tokens.push(ddl.slice(i, j + 1));
+            i = j + 1;
+        }
+        // -- line comments
+        else if (ddl[i] === '-' && ddl[i + 1] === '-') {
+            let j = i + 2;
+            while (j < ddl.length && ddl[j] !== '\n') j++;
+            tokens.push(ddl.slice(i, j));
+            i = j;
+        }
+        // Words (identifiers/keywords)
+        else if (/[a-zA-Z_]/.test(ddl[i])) {
+            let j = i + 1;
+            while (j < ddl.length && /[a-zA-Z0-9_]/.test(ddl[j])) j++;
+            tokens.push(ddl.slice(i, j));
+            i = j;
+        }
+        // Numbers
+        else if (/[0-9]/.test(ddl[i])) {
+            let j = i + 1;
+            while (j < ddl.length && /[0-9.]/.test(ddl[j])) j++;
+            tokens.push(ddl.slice(i, j));
+            i = j;
+        }
+        // Everything else (whitespace, operators, punctuation)
+        else {
+            tokens.push(ddl[i]);
+            i++;
+        }
+    }
+
+    const keywords = new Set([
+        'SELECT', 'FROM', 'WHERE', 'JOIN', 'LEFT', 'RIGHT', 'INNER', 'OUTER', 'FULL',
+        'CROSS', 'ON', 'AS', 'AND', 'OR', 'NOT', 'IN', 'IS', 'NULL', 'CASE', 'WHEN',
+        'THEN', 'ELSE', 'END', 'CREATE', 'REPLACE', 'VIEW', 'MATERIALIZED', 'TABLE',
+        'INSERT', 'INTO', 'UPDATE', 'DELETE', 'SET', 'VALUES', 'ALTER', 'DROP', 'ADD',
+        'WITH', 'RECURSIVE', 'UNION', 'ALL', 'EXCEPT', 'INTERSECT', 'ORDER', 'BY',
+        'GROUP', 'HAVING', 'LIMIT', 'OFFSET', 'DISTINCT', 'EXISTS', 'BETWEEN', 'LIKE',
+        'ILIKE', 'ASC', 'DESC', 'OVER', 'PARTITION', 'WINDOW', 'ROWS', 'RANGE',
+        'UNBOUNDED', 'PRECEDING', 'FOLLOWING', 'CURRENT', 'ROW', 'FILTER', 'LATERAL',
+        'NATURAL', 'USING', 'RETURNS', 'RETURN', 'BEGIN', 'DECLARE', 'IF', 'ELSIF',
+        'LOOP', 'FOR', 'WHILE', 'DO', 'PERFORM', 'RAISE', 'EXCEPTION', 'NOTICE',
+        'TRIGGER', 'FUNCTION', 'PROCEDURE', 'LANGUAGE', 'SECURITY', 'DEFINER',
+        'INVOKER', 'VOLATILE', 'STABLE', 'IMMUTABLE', 'STRICT', 'CALLED',
+        'INPUT', 'PARALLEL', 'SAFE', 'UNSAFE', 'RESTRICTED', 'COST', 'CONSTRAINT',
+        'PRIMARY', 'KEY', 'FOREIGN', 'REFERENCES', 'UNIQUE', 'CHECK', 'DEFAULT',
+        'INDEX', 'CONCURRENTLY', 'SCHEMA', 'GRANT', 'REVOKE', 'CAST', 'TRUE', 'FALSE',
+        'COALESCE', 'NULLIF', 'GREATEST', 'LEAST', 'FETCH', 'FIRST', 'NEXT', 'ONLY',
+    ]);
+    const types = new Set([
+        'INTEGER', 'INT', 'BIGINT', 'SMALLINT', 'SERIAL', 'BIGSERIAL', 'NUMERIC',
+        'DECIMAL', 'REAL', 'FLOAT', 'DOUBLE', 'PRECISION', 'BOOLEAN', 'BOOL',
+        'TEXT', 'VARCHAR', 'CHAR', 'CHARACTER', 'VARYING', 'UUID', 'JSON', 'JSONB',
+        'DATE', 'TIME', 'TIMESTAMP', 'TIMESTAMPTZ', 'INTERVAL', 'BYTEA', 'OID',
+        'VOID', 'RECORD', 'SETOF', 'ARRAY', 'HSTORE',
+    ]);
+    const builtins = new Set([
+        'COUNT', 'SUM', 'AVG', 'MIN', 'MAX', 'EXTRACT', 'TO_CHAR', 'TO_DATE',
+        'TO_TIMESTAMP', 'TO_NUMBER', 'COALESCE', 'NULLIF', 'GREATEST', 'LEAST',
+        'NOW', 'CURRENT_TIMESTAMP', 'CURRENT_DATE', 'CURRENT_TIME', 'AGE',
+        'DATE_TRUNC', 'DATE_PART', 'UPPER', 'LOWER', 'TRIM', 'SUBSTRING',
+        'REPLACE', 'CONCAT', 'LENGTH', 'POSITION', 'OVERLAY', 'SPLIT_PART',
+        'REGEXP_REPLACE', 'REGEXP_MATCHES', 'ARRAY_AGG', 'STRING_AGG',
+        'ROW_NUMBER', 'RANK', 'DENSE_RANK', 'LAG', 'LEAD', 'FIRST_VALUE',
+        'LAST_VALUE', 'NTH_VALUE', 'NTILE', 'PERCENT_RANK', 'CUME_DIST',
+        'GENERATE_SERIES', 'UNNEST', 'LATERAL', 'PERCENTILE_CONT', 'PERCENTILE_DISC',
+    ]);
+
+    let html = '';
+    for (const tok of tokens) {
+        // Comments
+        if (tok.startsWith('--')) {
+            html += `<span style="color:#6a9955;font-style:italic;">${escapeHtml(tok)}</span>`;
+        }
+        // String literals
+        else if (tok.startsWith("'")) {
+            html += `<span style="color:#ce9178;">${escapeHtml(tok)}</span>`;
+        }
+        // Double-quoted identifiers
+        else if (tok.startsWith('"')) {
+            html += `<span style="color:#9cdcfe;">${escapeHtml(tok)}</span>`;
+        }
+        // Numbers
+        else if (/^[0-9]/.test(tok)) {
+            html += `<span style="color:#b5cea8;">${escapeHtml(tok)}</span>`;
+        }
+        // Keywords, types, builtins
+        else if (/^[a-zA-Z_]/.test(tok)) {
+            const upper = tok.toUpperCase();
+            if (keywords.has(upper)) {
+                html += `<span style="color:#569cd6;font-weight:600;">${escapeHtml(tok)}</span>`;
+            } else if (types.has(upper)) {
+                html += `<span style="color:#4ec9b0;">${escapeHtml(tok)}</span>`;
+            } else if (builtins.has(upper)) {
+                html += `<span style="color:#dcdcaa;">${escapeHtml(tok)}</span>`;
+            } else {
+                html += escapeHtml(tok);
+            }
+        }
+        // Operators and punctuation
+        else {
+            html += escapeHtml(tok);
+        }
+    }
+    return html;
+}
+
+/** Handle the DDL result from provider and show it in a DBeaver-style modal */
 export function handleViewDdlResult(msg: any, escapeHtml: (s: any) => string) {
     // Remove existing DDL modal
     const existingOverlay = document.getElementById('ddl-modal-overlay');
@@ -365,35 +498,45 @@ export function handleViewDdlResult(msg: any, escapeHtml: (s: any) => string) {
 
     const overlay = document.createElement('div');
     overlay.id = 'ddl-modal-overlay';
-    overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.4);backdrop-filter:blur(2px);';
+    overlay.style.cssText = 'position:fixed;inset:0;z-index:9998;background:rgba(0,0,0,0.45);backdrop-filter:blur(3px);';
 
     const modal = document.createElement('div');
     modal.id = 'ddl-modal';
-    modal.style.cssText = 'position:fixed;top:15%;left:15%;width:70%;height:70%;z-index:9999;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--border-radius-md);box-shadow:var(--shadow-md);display:flex;flex-direction:column;';
+    modal.style.cssText = 'position:fixed;top:10%;left:10%;width:80%;height:80%;z-index:9999;background:var(--bg-surface);border:1px solid var(--border-color);border-radius:var(--border-radius-md);box-shadow:0 25px 50px -12px rgba(0,0,0,0.25);display:flex;flex-direction:column;';
 
     const title = msg.tableName || 'DDL';
     const typeLabel = msg.tableType === 'materialized_view' ? 'Materialized View' : 'View';
+    const rawDdl = msg.ddl || '';
     let bodyContent = '';
 
     if (msg.error) {
         bodyContent = `<div style="padding:20px;color:var(--danger);font-family:var(--font-mono);font-size:13px;">${escapeHtml(msg.error)}</div>`;
+    } else if (!rawDdl) {
+        bodyContent = `<div style="padding:20px;color:var(--text-muted);font-style:italic;">No DDL definition found.</div>`;
     } else {
-        const ddl = msg.ddl || 'No DDL found.';
-        bodyContent = `<pre style="padding:20px;margin:0;font-family:var(--font-mono);font-size:13px;line-height:1.6;color:var(--text-main);overflow:auto;flex:1;white-space:pre-wrap;word-break:break-word;background:var(--bg-surface-inset);">${escapeHtml(ddl)}</pre>`;
+        const highlighted = highlightSql(rawDdl, escapeHtml);
+        bodyContent = `<div style="flex:1;overflow:auto;background:#1e1e2e;border-radius:0 0 var(--border-radius-md) var(--border-radius-md);">
+            <pre id="ddl-code-block" style="padding:20px 24px;margin:0;font-family:var(--font-mono);font-size:13px;line-height:1.7;color:#d4d4d4;white-space:pre-wrap;word-break:break-word;tab-size:2;">${highlighted}</pre>
+        </div>`;
     }
 
+    const copyBtnSvg = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>';
+
     modal.innerHTML = `
-        <div style="padding:14px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:12px;background:var(--bg-surface-hover);border-radius:var(--border-radius-md) var(--border-radius-md) 0 0;flex-shrink:0;">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
-            <div>
-                <span style="font-weight:600;font-size:14px;color:var(--text-main);">${escapeHtml(title)}</span>
-                <span style="font-size:11px;color:var(--text-muted);margin-left:8px;padding:2px 8px;background:var(--bg-surface-inset);border-radius:4px;">${typeLabel}</span>
+        <div style="padding:12px 20px;border-bottom:1px solid var(--border-color);display:flex;align-items:center;gap:12px;background:var(--bg-surface-hover);border-radius:var(--border-radius-md) var(--border-radius-md) 0 0;flex-shrink:0;">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--primary)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/></svg>
+            <div style="display:flex;align-items:center;gap:8px;">
+                <span style="font-weight:600;font-size:15px;color:var(--text-main);font-family:var(--font-mono);">${escapeHtml(title)}</span>
+                <span style="font-size:11px;color:var(--text-muted);padding:2px 8px;background:var(--bg-surface-inset);border-radius:4px;border:1px solid var(--border-color);">${typeLabel}</span>
             </div>
-            <button id="ddl-modal-close" style="margin-left:auto;background:transparent;border:1px solid var(--border-color);color:var(--text-muted);width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-            </button>
+            <div style="margin-left:auto;display:flex;align-items:center;gap:8px;">
+                ${!msg.error && rawDdl ? `<button id="ddl-copy-btn" style="display:flex;align-items:center;gap:6px;padding:5px 12px;border:1px solid var(--border-color);border-radius:6px;background:var(--bg-surface);color:var(--text-main);cursor:pointer;font-size:12px;font-weight:500;font-family:var(--font-sans);transition:all 0.15s;">${copyBtnSvg} Copy DDL</button>` : ''}
+                <button id="ddl-modal-close" style="background:transparent;border:1px solid var(--border-color);color:var(--text-muted);width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all 0.15s;">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+            </div>
         </div>
-        <div style="flex:1;overflow:auto;display:flex;flex-direction:column;">${bodyContent}</div>
+        ${bodyContent}
     `;
 
     document.body.appendChild(overlay);
@@ -411,4 +554,50 @@ export function handleViewDdlResult(msg: any, escapeHtml: (s: any) => string) {
     document.getElementById('ddl-modal-close')?.addEventListener('click', closeDdl);
     overlay.addEventListener('click', closeDdl);
     document.addEventListener('keydown', ddlEscHandler);
+
+    // Copy DDL button
+    const copyBtn = document.getElementById('ddl-copy-btn');
+    if (copyBtn && rawDdl) {
+        copyBtn.addEventListener('click', () => {
+            try {
+                navigator.clipboard.writeText(rawDdl).catch(() => {
+                    (window as any).vscode.postMessage({ type: 'clipboard-write', text: rawDdl });
+                });
+            } catch {
+                (window as any).vscode.postMessage({ type: 'clipboard-write', text: rawDdl });
+            }
+            copyBtn.innerHTML = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"></polyline></svg> Copied!';
+            copyBtn.style.color = 'var(--success)';
+            copyBtn.style.borderColor = 'var(--success)';
+            setTimeout(() => {
+                copyBtn.innerHTML = `${copyBtnSvg} Copy DDL`;
+                copyBtn.style.color = '';
+                copyBtn.style.borderColor = '';
+            }, 2000);
+        });
+        // Hover effect
+        copyBtn.addEventListener('mouseenter', () => {
+            copyBtn.style.background = 'var(--primary-light)';
+            copyBtn.style.borderColor = 'var(--primary)';
+        });
+        copyBtn.addEventListener('mouseleave', () => {
+            copyBtn.style.background = 'var(--bg-surface)';
+            copyBtn.style.borderColor = '';
+        });
+    }
+
+    // Close button hover
+    const closeBtn = document.getElementById('ddl-modal-close');
+    if (closeBtn) {
+        closeBtn.addEventListener('mouseenter', () => {
+            (closeBtn as HTMLElement).style.background = 'var(--danger-light)';
+            (closeBtn as HTMLElement).style.borderColor = 'var(--danger)';
+            (closeBtn as HTMLElement).style.color = 'var(--danger)';
+        });
+        closeBtn.addEventListener('mouseleave', () => {
+            (closeBtn as HTMLElement).style.background = 'transparent';
+            (closeBtn as HTMLElement).style.borderColor = '';
+            (closeBtn as HTMLElement).style.color = 'var(--text-muted)';
+        });
+    }
 }
