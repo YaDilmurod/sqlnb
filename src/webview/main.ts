@@ -49,7 +49,7 @@ function parseCells(jsonText: string): Cell[] {
     const data = JSON.parse(jsonText);
     return data.cells || [];
   } catch {
-    return [{ type: 'connection', content: 'duckdb||' }, { type: 'schema', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
+    return [{ type: 'connection', content: 'duckdb||', name: '' }, { type: 'schema', content: '' }, { type: 'sql', content: 'SELECT 1;' }];
   }
 }
 
@@ -347,9 +347,13 @@ function renderCells() {
     toolbar += `<div class="cell-badge ${meta.badgeClass}">${meta.label}</div>`;
 
     // Per-type inline controls (name input, source table dropdown, etc.)
-    if (cell.type === 'sql') {
-      const cellName = cell.name || 'table_' + idx;
-      toolbar += '<input type="text" id="cell-name-' + idx + '" class="cell-name-input" value="' + escapeHtml(cellName) + '" style="background:transparent;border:none;border-bottom:1px dotted var(--border-color);outline:none;font-size:12px;color:var(--text-muted);padding:2px 4px;width:120px;margin-left:8px;font-family:var(--font-mono);" placeholder="table_' + idx + '" />';
+    if (cell.type === 'sql' || cell.type === 'connection') {
+      const isConn = cell.type === 'connection';
+      const defaultName = isConn ? '' : 'table_' + idx;
+      const cellName = cell.name ?? defaultName;
+      const placeholder = isConn ? 'Connection Name' : 'table_' + idx;
+      const width = isConn ? '150px' : '120px';
+      toolbar += '<input type="text" id="cell-name-' + idx + '" class="cell-name-input" value="' + escapeHtml(cellName) + '" style="background:transparent;border:none;border-bottom:1px dotted var(--border-color);outline:none;font-size:12px;color:var(--text-muted);padding:2px 4px;width:' + width + ';margin-left:8px;font-family:var(--font-mono);" placeholder="' + placeholder + '" />';
     }
     if (cell.type === 'summary') {
       // Source table dropdown — rendered in the outer toolbar for consistency
@@ -500,6 +504,10 @@ function renderCells() {
         );
         if (editor) monacoEditors.set(idx, editor);
       });
+    }
+    
+    // Shared listener for name input
+    if (cell.type === 'sql' || cell.type === 'connection') {
       const nameInp = document.getElementById('cell-name-' + idx) as HTMLInputElement;
       if (nameInp) {
         nameInp.addEventListener('change', () => {
@@ -507,7 +515,9 @@ function renderCells() {
           save();
         });
       }
-    } else if (cell.type === 'connection') {
+    }
+    
+    if (cell.type === 'connection') {
       const inp = document.getElementById('conn-input-' + idx) as HTMLInputElement;
       const driverInp = document.getElementById('conn-driver-' + idx) as HTMLInputElement;
       const toggleContainer = document.getElementById('conn-toggle-container-' + idx);
@@ -707,7 +717,7 @@ function autoResizeTextarea(el: HTMLTextAreaElement) {
   // 1. Ensure a connection cell exists at position 0
   const connIdx = cells.findIndex(c => c.type === 'connection');
   if (connIdx < 0) {
-    cells.unshift({ type: 'connection', content: 'duckdb||' });
+    cells.unshift({ type: 'connection', content: 'duckdb||', name: '' });
     changed = true;
   } else if (connIdx !== 0) {
     // Move connection cell to index 0

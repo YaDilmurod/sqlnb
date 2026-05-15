@@ -3,7 +3,7 @@
     "displayName": "SQLNB - SQL Notebook",
     "description": "A lightweight Jupyter-style SQL notebook for PostgreSQL — built for data analysts",
     "icon": "images/icon.png",
-    "version": "0.5.0",
+    "version": "0.5.1",
     "publisher": "SQLNB",
     "engines": {
         "vscode": "^1.80.0"
