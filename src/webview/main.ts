@@ -33,6 +33,7 @@ let isConnected = false;
 let dbName = '';
 let driverType = '';
 let recentConnections: string[] = [];
+let savedConnections: Record<string, string> = {};
 let columnCache: Record<string, string[]> = {};
 let monacoEditors: Map<number, any> = new Map();
 
@@ -530,12 +531,10 @@ function renderCells() {
     }
 
     // Per-type inline controls (name input, source table dropdown, etc.)
-    if (cell.type === 'sql' || cell.type === 'connection') {
-      const isConn = cell.type === 'connection';
-      const defaultName = isConn ? '' : 'table_' + idx;
-      const cellName = cell.name ?? defaultName;
-      const placeholder = isConn ? 'Connection Name' : 'table_' + idx;
-      const width = isConn ? '150px' : '120px';
+    if (cell.type === 'sql') {
+      const cellName = cell.name ?? ('table_' + idx);
+      const placeholder = 'table_' + idx;
+      const width = '120px';
       toolbar += '<input type="text" id="cell-name-' + idx + '" class="cell-name-input" value="' + escapeHtml(cellName) + '" style="background:transparent;border:none;border-bottom:1px dotted var(--border-color);outline:none;font-size:12px;color:var(--text-muted);padding:2px 4px;width:' + width + ';margin-left:8px;font-family:var(--font-mono);" placeholder="' + placeholder + '" />';
     }
     if (cell.type === 'summary') {
@@ -624,13 +623,50 @@ function renderCells() {
       if (!isConnected) {
         content += `<input type="hidden" id="conn-driver-${idx}" value="postgres" />`;
         content += `<input type="hidden" id="conn-input-${idx}" value="${escapeHtml(connString)}" />`;
-        content += `<button class="conn-configure-btn" data-action="openConnModal" data-idx="${idx}">${SETTINGS_SVG} Configure Connection</button>`;
+        
+        let recentDropdown = '';
+        const savedKeys = Object.keys(savedConnections);
+        if (savedKeys.length > 0 || (recentConnections && recentConnections.length > 0)) {
+          recentDropdown += `<select id="conn-select-${idx}" class="sqlnb-select" style="margin-right: 8px; font-size: 13px; padding: 6px 12px; width: 250px;">`;
+          recentDropdown += `<option value="">-- Choose Connection --</option>`;
+          
+          if (savedKeys.length > 0) {
+            recentDropdown += `<optgroup label="Saved Connections">`;
+            savedKeys.forEach((key) => {
+              const cString = savedConnections[key];
+              const selected = cString === connString ? 'selected' : '';
+              recentDropdown += `<option value="${escapeHtml(cString)}" ${selected}>${escapeHtml(key)}</option>`;
+            });
+            recentDropdown += `</optgroup>`;
+          }
+          
+          if (recentConnections.length > 0) {
+            recentDropdown += `<optgroup label="Recent Connections">`;
+            recentConnections.forEach((conn) => {
+              let label = conn;
+              try { const u = new URL(conn); label = u.username + '@' + u.hostname + ':' + (u.port || '5432') + u.pathname; } catch {}
+              const selected = conn === connString ? 'selected' : '';
+              recentDropdown += `<option value="${escapeHtml(conn)}" ${selected}>${escapeHtml(label)}</option>`;
+            });
+            recentDropdown += `</optgroup>`;
+          }
+          
+          recentDropdown += `</select>`;
+        }
+        
+        content += `<div style="display:flex; align-items:center; flex-wrap:wrap; gap:8px;">`;
+        if (recentDropdown) {
+          content += recentDropdown;
+        }
+        content += `<button class="conn-configure-btn" style="margin: 0;" data-action="openConnModal" data-idx="${idx}">${SETTINGS_SVG} Configure New</button>`;
+        content += `</div>`;
+        
         if (connString.trim()) {
           // Show current connection string summary
           let summary = '';
           try { const u = new URL(connString); summary = u.username + '@' + u.hostname + ':' + (u.port || '5432') + u.pathname; } catch { summary = connString.substring(0, 50); }
-          content += `<div style="margin-top:8px;font-size:12px;color:var(--text-muted);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">${escapeHtml(summary)}</div>`;
-          content += `<div class="conn-actions-row"><button class="btn-primary" id="conn-btn-${idx}" data-action="connectDb" data-idx="${idx}">Connect</button></div>`;
+          content += `<div style="margin-top:12px;font-size:12px;color:var(--text-muted);font-family:var(--font-mono);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Active: ${escapeHtml(summary)}</div>`;
+          content += `<div class="conn-actions-row" style="margin-top:12px;"><button class="btn-primary" id="conn-btn-${idx}" data-action="connectDb" data-idx="${idx}">Connect</button></div>`;
         }
       }
       content += '<div id="conn-msg-' + idx + '" style="font-size:13px; margin-top:8px;"></div></div>';
@@ -694,7 +730,7 @@ function renderCells() {
     }
     
     // Shared listener for name input
-    if (cell.type === 'sql' || cell.type === 'connection') {
+    if (cell.type === 'sql') {
       const nameInp = document.getElementById('cell-name-' + idx) as HTMLInputElement;
       if (nameInp) {
         nameInp.addEventListener('change', () => {
@@ -722,6 +758,27 @@ function renderCells() {
           if (e.key === 'Enter') {
             e.preventDefault();
             if (inp.value.trim()) (window as any).connectDb(idx);
+          }
+        });
+      }
+      
+      const selectEl = document.getElementById('conn-select-' + idx) as HTMLSelectElement;
+      if (selectEl) {
+        selectEl.addEventListener('change', () => {
+          if (selectEl.value) {
+            cells[idx].content = 'postgres||' + selectEl.value;
+            // Find name if it's from saved connections
+            let newName = '';
+            for (const [key, val] of Object.entries(savedConnections)) {
+              if (val === selectEl.value) {
+                newName = key;
+                break;
+              }
+            }
+            if (newName) cells[idx].name = newName;
+            
+            save();
+            renderCells();
           }
         });
       }
@@ -1595,18 +1652,8 @@ window.addEventListener('message', event => {
 
   if (msg.type === 'recent-connections') {
     recentConnections = msg.connections || [];
-    // Update all per-cell datalists
-    let updated = false;
-    cells.forEach((c, i) => {
-      if (c.type === 'connection') {
-        const dl = document.getElementById('recent-conns-' + i);
-        if (dl) {
-          dl.innerHTML = recentConnections.map(conn => `<option value="${escapeHtml(conn)}"></option>`).join('');
-          updated = true;
-        }
-      }
-    });
-    if (!updated) renderCells();
+    savedConnections = msg.savedConns || {};
+    renderCells();
   }
 
   if (msg.type === 'disconnect-result') {

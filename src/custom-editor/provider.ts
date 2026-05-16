@@ -83,7 +83,8 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
 
     webviewPanel.webview.html = this.getHtml(webviewPanel.webview);
 
-    webviewPanel.webview.postMessage({ type: 'recent-connections', connections: this.context.globalState.get<string[]>('sqlnb-recent-connections', []) });
+    const savedConns = vscode.workspace.getConfiguration('sqlNotebook').get<Record<string, string>>('connections') || {};
+    webviewPanel.webview.postMessage({ type: 'recent-connections', connections: this.context.globalState.get<string[]>('sqlnb-recent-connections', []), savedConns });
 
     // Initial render
     webviewPanel.webview.postMessage({ type: 'doc-update', text: document.getText() });
