@@ -1,33 +1,24 @@
 export interface ProfileQueryStrategy {
     type: string;
-    getSelects(col: string, qCol: string, driverType: string): string[];
+    getSelects(col: string, qCol: string): string[];
     getCTEs?(col: string, qCol: string, cteAlias: string): { cte: string, joinSelects: string[] } | null;
 }
 
 export const NumericProfileStrategy: ProfileQueryStrategy = {
     type: 'numeric',
-    getSelects: (col, qCol, driverType) => {
-        const numExprPg = `CASE WHEN ${qCol}::text ~ '^[-+]?[0-9]*\\.?([0-9]+)?([eE][-+]?[0-9]+)?$' AND ${qCol}::text != '' AND ${qCol}::text != '.' THEN ${qCol}::numeric ELSE NULL END`;
-        const numExpr = driverType === 'duckdb' ? `TRY_CAST(${qCol} AS DOUBLE)` : numExprPg;
+    getSelects: (col, qCol) => {
+        const numExpr = `CASE WHEN ${qCol}::text ~ '^[-+]?[0-9]*\\.?([0-9]+)?([eE][-+]?[0-9]+)?$' AND ${qCol}::text != '' AND ${qCol}::text != '.' THEN ${qCol}::numeric ELSE NULL END`;
         
-        const selects = [
+        return [
             `COUNT(${numExpr}) AS "${col}__count"`,
             `MIN(${numExpr}) AS "${col}__min"`,
             `MAX(${numExpr}) AS "${col}__max"`,
             `AVG(${numExpr}) AS "${col}__mean"`,
-            `SUM(${numExpr}) AS "${col}__sum"`
+            `SUM(${numExpr}) AS "${col}__sum"`,
+            `PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ${numExpr}) AS "${col}__p25"`,
+            `PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ${numExpr}) AS "${col}__p50"`,
+            `PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ${numExpr}) AS "${col}__p75"`
         ];
-        
-        if (driverType === 'duckdb') {
-            selects.push(`QUANTILE_CONT(${numExpr}, 0.25) AS "${col}__p25"`);
-            selects.push(`QUANTILE_CONT(${numExpr}, 0.50) AS "${col}__p50"`);
-            selects.push(`QUANTILE_CONT(${numExpr}, 0.75) AS "${col}__p75"`);
-        } else {
-            selects.push(`PERCENTILE_CONT(0.25) WITHIN GROUP (ORDER BY ${numExpr}) AS "${col}__p25"`);
-            selects.push(`PERCENTILE_CONT(0.50) WITHIN GROUP (ORDER BY ${numExpr}) AS "${col}__p50"`);
-            selects.push(`PERCENTILE_CONT(0.75) WITHIN GROUP (ORDER BY ${numExpr}) AS "${col}__p75"`);
-        }
-        return selects;
     }
 };
 
@@ -71,8 +62,7 @@ export class ProfilerQueryBuilder {
 
     public buildQuery(
         originalQuery: string,
-        columnTypes: Record<string, string>,
-        driverType: 'postgres' | 'duckdb' = 'postgres'
+        columnTypes: Record<string, string>
     ): string {
         const cleanOriginal = originalQuery.replace(/;+\s*$/, '');
         
@@ -92,7 +82,7 @@ export class ProfilerQueryBuilder {
 
             const strategy = this.strategies.get(type) || this.strategies.get('string')!;
             
-            selects.push(...strategy.getSelects(safeCol, qCol, driverType));
+            selects.push(...strategy.getSelects(safeCol, qCol));
 
             if (strategy.getCTEs) {
                 const cteAlias = `_sqlnb_top_${cteIndex++}`;

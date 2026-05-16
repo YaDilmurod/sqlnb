@@ -10,19 +10,7 @@ on:
 
 jobs:
   publish:
-    strategy:
-      matrix:
-        include:
-          - os: windows-latest
-            target: win32-x64
-          - os: ubuntu-latest
-            target: linux-x64
-          - os: macos-latest
-            target: darwin-x64
-          - os: macos-latest
-            target: darwin-arm64
-
-    runs-on: ${{ matrix.os }}
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -41,5 +29,4 @@ jobs:
       - name: Publish to Open VSX
         shell: bash
         run: |
-          sleep $((RANDOM % 5 + 1))
-          npx ovsx publish --target ${{ matrix.target }} -p ${{ secrets.OVSX_PAT }}
+          npx ovsx publish -p ${{ secrets.OVSX_PAT }}

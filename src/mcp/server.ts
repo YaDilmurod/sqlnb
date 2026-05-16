@@ -158,7 +158,7 @@ server.setRequestHandler(CallToolRequestSchema, async (request) => {
     const driver = new PostgresDriver();
     try {
       await driver.connect(connectionString);
-      const query = buildSchemaQuery('postgres');
+      const query = buildSchemaQuery();
       const result = await driver.executeStatement(query);
       const schema = parseSchemaRows(result.rows);
       return {

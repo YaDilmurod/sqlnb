@@ -1137,113 +1137,6 @@ button[disabled] {
   to   { opacity: 1; }
 }
 
-@keyframes fkModalSlideUp {
-  from { opacity: 0; transform: translateY(20px) scale(0.98); }
-  to   { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-.sqlnb-fk-modal-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(0, 0, 0, 0.45);
-  backdrop-filter: blur(4px);
-  animation: fkModalFadeIn 0.2s ease;
-}
-
-.sqlnb-fk-modal-content {
-  background: var(--bg-surface);
-  border: 1px solid var(--border-color);
-  border-radius: var(--border-radius-lg);
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  width: 90vw;
-  max-width: 1000px;
-  max-height: 80vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  animation: fkModalSlideUp 0.25s ease;
-}
-
-.sqlnb-fk-modal-header {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 14px 20px;
-  background: var(--bg-surface-hover);
-  border-bottom: 1px solid var(--border-color);
-  flex-shrink: 0;
-}
-
-.sqlnb-fk-modal-title {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--text-main);
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.sqlnb-fk-modal-icon {
-  font-size: 16px;
-}
-
-.sqlnb-fk-modal-filter {
-  font-weight: 400;
-  font-size: 12px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  background: var(--bg-surface-inset);
-  padding: 2px 8px;
-  border-radius: 4px;
-  border: 1px solid var(--border-color);
-}
-
-.sqlnb-fk-modal-meta {
-  margin-left: auto;
-  font-size: 12px;
-  color: var(--text-muted);
-  font-variant-numeric: tabular-nums;
-}
-
-.sqlnb-fk-modal-close {
-  background: transparent;
-  border: 1px solid var(--border-color);
-  color: var(--text-muted);
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 14px;
-  transition: all 0.15s;
-  flex-shrink: 0;
-}
-
-.sqlnb-fk-modal-close:hover {
-  background: var(--danger-light);
-  border-color: var(--danger);
-  color: var(--danger);
-}
-
-.sqlnb-fk-modal-body {
-  overflow: auto;
-  flex: 1;
-  padding: 0;
-}
-
-.sqlnb-fk-error {
-  padding: 24px;
-  color: var(--danger);
-  font-family: var(--font-mono);
-  font-size: 13px;
-}
-
 .sqlnb-fk-empty {
   padding: 24px;
   color: var(--text-muted);
@@ -1469,57 +1362,40 @@ button[disabled] {
 }
 
 /* ═══════════════════════════════════════════════════
-   SQL Execution Status Bar
+   SQL Status Indicator (compact, in toolbar header)
    ═══════════════════════════════════════════════════ */
 
-.sql-status-bar {
-  display: flex;
+.sql-status-indicator {
+  display: inline-flex;
   align-items: center;
-  gap: 8px;
-  padding: 6px 16px;
-  font-size: 12px;
+  gap: 6px;
+  margin-left: 8px;
+  font-size: 11px;
   font-family: var(--font-sans);
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-surface-hover);
-  min-height: 32px;
-  transition: background 0.2s ease;
-}
-
-.sql-status-bar.status-success {
-  background: color-mix(in srgb, var(--success) 6%, var(--bg-surface-hover) 94%);
-  border-top-color: color-mix(in srgb, var(--success) 20%, var(--border-color) 80%);
-}
-
-.sql-status-bar.status-error {
-  background: color-mix(in srgb, var(--danger) 6%, var(--bg-surface-hover) 94%);
-  border-top-color: color-mix(in srgb, var(--danger) 20%, var(--border-color) 80%);
-}
-
-.sql-status-bar.status-running {
-  background: color-mix(in srgb, var(--warning) 6%, var(--bg-surface-hover) 94%);
-  border-top-color: color-mix(in srgb, var(--warning) 20%, var(--border-color) 80%);
+  white-space: nowrap;
+  min-height: 18px;
 }
 
 .sql-status-dot {
-  width: 8px;
-  height: 8px;
+  width: 7px;
+  height: 7px;
   border-radius: 50%;
   flex-shrink: 0;
 }
 
 .sql-status-dot.dot-success {
   background: var(--success);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--success) 40%, transparent 60%);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--success) 40%, transparent 60%);
 }
 
 .sql-status-dot.dot-error {
   background: var(--danger);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--danger) 40%, transparent 60%);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--danger) 40%, transparent 60%);
 }
 
 .sql-status-dot.dot-running {
   background: var(--warning);
-  box-shadow: 0 0 6px color-mix(in srgb, var(--warning) 40%, transparent 60%);
+  box-shadow: 0 0 5px color-mix(in srgb, var(--warning) 40%, transparent 60%);
   animation: statusPulse 1.5s ease-in-out infinite;
 }
 
@@ -1531,6 +1407,7 @@ button[disabled] {
 .sql-status-text {
   color: var(--text-muted);
   font-weight: 500;
+  font-size: 11px;
 }
 
 .sql-status-text strong {
@@ -1602,43 +1479,6 @@ button[disabled] {
   margin-top: 2px;
 }
 
-.conn-driver-toggle-group {
-  display: flex;
-  background: var(--bg-surface-inset);
-  border: 1px solid var(--border-color);
-  border-radius: 8px;
-  overflow: hidden;
-  padding: 3px;
-  gap: 3px;
-  margin-bottom: 16px;
-}
-
-.conn-driver-option {
-  flex: 1;
-  padding: 8px 16px;
-  border: none;
-  background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 13px;
-  font-weight: 500;
-  font-family: var(--font-sans);
-  border-radius: 6px;
-  transition: all 0.2s ease;
-  text-align: center;
-}
-
-.conn-driver-option:hover {
-  background: var(--bg-surface-hover);
-  color: var(--text-main);
-}
-
-.conn-driver-option.active {
-  background: var(--primary);
-  color: #fff;
-  font-weight: 600;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.12);
-}
 
 .conn-actions-row {
   display: flex;
@@ -1673,20 +1513,20 @@ button[disabled] {
 }
 
 /* ═══════════════════════════════════════════════════
-   Connection Modal
+   Unified Modal System
    ═══════════════════════════════════════════════════ */
 
-@keyframes connModalFadeIn {
+@keyframes sqlnbModalFadeIn {
   from { opacity: 0; }
   to   { opacity: 1; }
 }
 
-@keyframes connModalSlideUp {
+@keyframes sqlnbModalSlideUp {
   from { opacity: 0; transform: translateY(20px) scale(0.98); }
   to   { opacity: 1; transform: translateY(0) scale(1); }
 }
 
-.conn-modal-overlay {
+.sqlnb-modal-overlay {
   position: fixed;
   inset: 0;
   z-index: 100000;
@@ -1695,41 +1535,77 @@ button[disabled] {
   justify-content: center;
   background: rgba(0, 0, 0, 0.45);
   backdrop-filter: blur(4px);
-  animation: connModalFadeIn 0.2s ease;
+  animation: sqlnbModalFadeIn 0.2s ease;
 }
 
-.conn-modal {
+.sqlnb-modal {
   background: var(--bg-surface);
   border: 1px solid var(--border-color);
   border-radius: var(--border-radius-lg);
   box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25);
-  width: 520px;
   max-width: 95vw;
   max-height: 90vh;
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  animation: connModalSlideUp 0.25s ease;
+  animation: sqlnbModalSlideUp 0.25s ease;
 }
 
-.conn-modal-header {
+/* Size variants */
+.sqlnb-modal-sm  { width: 520px; }
+.sqlnb-modal-md  { width: 800px; }
+.sqlnb-modal-lg  { width: 1000px; }
+.sqlnb-modal-full { width: 90vw; height: 80vh; }
+
+.sqlnb-modal-header {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 16px 20px;
+  padding: 14px 20px;
   background: var(--bg-surface-hover);
   border-bottom: 1px solid var(--border-color);
+  flex-shrink: 0;
 }
 
-.conn-modal-header h3 {
+.sqlnb-modal-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   font-size: 15px;
   font-weight: 600;
   color: var(--text-main);
-  margin: 0;
   flex: 1;
+  min-width: 0;
 }
 
-.conn-modal-close {
+.sqlnb-modal-icon {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+}
+
+.sqlnb-modal-subtitle {
+  font-weight: 400;
+  font-size: 12px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  background: var(--bg-surface-inset);
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid var(--border-color);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sqlnb-modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.sqlnb-modal-close {
   background: transparent;
   border: 1px solid var(--border-color);
   color: var(--text-muted);
@@ -1744,19 +1620,29 @@ button[disabled] {
   flex-shrink: 0;
 }
 
-.conn-modal-close:hover {
+.sqlnb-modal-close:hover {
   background: var(--danger-light);
   border-color: var(--danger);
   color: var(--danger);
 }
 
-.conn-modal-body {
-  padding: 20px;
+.sqlnb-modal-body {
+  flex: 1;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
+  padding: 20px;
 }
+
+.sqlnb-modal-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--border-color);
+  background: var(--bg-surface-hover);
+  flex-shrink: 0;
+}
+
+/* ── Connection Modal (inner field styles) ── */
 
 .conn-modal-field {
   display: flex;
@@ -1824,15 +1710,6 @@ button[disabled] {
   flex: 1;
   height: 1px;
   background: var(--border-color);
-}
-
-.conn-modal-footer {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 16px 20px;
-  border-top: 1px solid var(--border-color);
-  background: var(--bg-surface-hover);
 }
 
 .conn-modal-test-btn {
@@ -1908,4 +1785,3 @@ button[disabled] {
   background: var(--bg-surface-inset);
   color: var(--text-main);
 }
-

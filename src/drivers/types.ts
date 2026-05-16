@@ -1,5 +1,5 @@
 /**
- * Common interface for all database drivers (PostgreSQL, DuckDB, etc.)
+ * Common interface for all database drivers.
  * This abstraction allows the controller to be engine-agnostic.
  */
 
@@ -13,7 +13,7 @@ export interface QueryResult {
 }
 
 export interface IDatabaseDriver {
-  readonly type: 'postgres' | 'duckdb';
+  readonly type: 'postgres';
 
   /** Connect to the database. */
   connect(connectionString?: string): Promise<void>;
@@ -26,7 +26,7 @@ export interface IDatabaseDriver {
 
   /**
    * Execute a SELECT-like query with row-limit protection.
-   * For PostgreSQL, this uses cursors. For DuckDB, this uses LIMIT.
+   * Uses server-side cursors for memory safety.
    */
   executeSelect(query: string, maxRows: number): Promise<QueryResult>;
 
@@ -42,14 +42,13 @@ export interface IDatabaseDriver {
   getEstimatedRows(query: string): Promise<number | undefined>;
 
   /**
-   * Cancel a running query. 
-   * Accepts an optional PID for PostgreSQL; DuckDB may ignore this.
+   * Cancel a running query.
+   * Accepts an optional PID for PostgreSQL.
    */
   cancelQuery(pid?: number): Promise<void>;
 
   /**
    * Get the backend process ID for cancellation tracking.
-   * Returns undefined if not applicable (e.g., DuckDB).
    */
   getBackendPid(): Promise<number | undefined>;
 

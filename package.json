@@ -3,7 +3,7 @@
     "displayName": "SQLNB - SQL Notebook",
     "description": "A lightweight Jupyter-style SQL notebook for PostgreSQL — built for data analysts",
     "icon": "images/icon.png",
-    "version": "0.6.0",
+    "version": "0.7.0",
     "publisher": "SQLNB",
     "engines": {
         "vscode": "^1.80.0"
@@ -90,8 +90,6 @@
     },
     "dependencies": {
         "@modelcontextprotocol/sdk": "^1.29.0",
-        "duckdb": "^1.4.4",
-        "duckdb-async": "^1.4.2",
         "echarts": "^5.5.0",
         "pg": "^8.11.3",
         "posthog-node": "^5.29.7",

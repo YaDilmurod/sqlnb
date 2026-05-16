@@ -24,29 +24,7 @@ export interface SchemaTable {
   sizeBytes: number | null;
 }
 
-export function buildSchemaQuery(driverType: 'postgres' | 'duckdb' = 'postgres'): string {
-  if (driverType === 'duckdb') {
-    return `SELECT
-  c.table_schema,
-  c.table_name,
-  t.table_type,
-  c.data_type,
-  c.data_type AS udt_name,
-  c.column_name,
-  c.is_nullable,
-  c.column_default,
-  c.ordinal_position,
-  c.character_maximum_length,
-  c.numeric_precision,
-  false AS is_primary_key,
-  NULL AS table_size_bytes
-FROM information_schema.columns c
-JOIN information_schema.tables t
-  ON c.table_name = t.table_name AND c.table_schema = t.table_schema
-WHERE c.table_schema NOT IN ('pg_catalog', 'information_schema', 'temp')
-ORDER BY c.table_schema, c.table_name, c.ordinal_position`;
-  }
-
+export function buildSchemaQuery(): string {
   return `SELECT
   c.table_schema,
   c.table_name,
@@ -161,14 +139,10 @@ export interface AutoCompleteTable {
   columns: { name: string; type: string }[];
 }
 
-export function buildAutoCompleteQuery(driverType: 'postgres' | 'duckdb' = 'postgres'): string {
-  const excludedSchemas = driverType === 'duckdb'
-    ? `('pg_catalog', 'information_schema', 'temp')`
-    : `('pg_catalog', 'information_schema')`;
-
+export function buildAutoCompleteQuery(): string {
   return `SELECT table_schema, table_name, column_name, data_type
 FROM information_schema.columns
-WHERE table_schema NOT IN ${excludedSchemas}
+WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
 ORDER BY table_schema, table_name, ordinal_position`;
 }
 
@@ -213,9 +187,7 @@ export interface PrimaryKeyInfo {
   columnName: string;
 }
 
-export function buildConstraintQuery(driverType: 'postgres' | 'duckdb' = 'postgres'): { fkQuery: string; pkQuery: string } | null {
-  if (driverType !== 'postgres') return null; // DuckDB doesn't have FK/PK via pg_constraint
-
+export function buildConstraintQuery(): { fkQuery: string; pkQuery: string } {
   const fkQuery = `
 SELECT
   c.oid         AS source_table_oid,

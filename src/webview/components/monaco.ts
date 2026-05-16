@@ -316,7 +316,7 @@ function registerSqlCompletionProvider() {
 
             // ─── CASE 5: SQL function suggestions ───
             const driverType: string = (window as any)._sqlnbDriverType || 'postgres';
-            const funcs = getSqlFunctions(driverType);
+            const funcs = getSqlFunctions();
             for (const fn of funcs) {
                 suggestions.push({
                     label: fn.name,

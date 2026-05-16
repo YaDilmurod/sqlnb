@@ -1,15 +1,8 @@
 import { getSqlFunctions, SqlFunctionDef } from './sql-functions';
 
-export function renderWiki(driverType: string): string {
-  const isPg = driverType === 'postgres';
-  const isDuck = driverType === 'duckdb';
-
-  if (!isPg && !isDuck) {
-    return `<div class="sqlnb-wiki-container"><div style="padding:20px; color:var(--text-muted); text-align:center;">Please connect to a database to see the Wiki.</div></div>`;
-  }
-
-  const title = isPg ? 'PostgreSQL Reference' : 'DuckDB Reference';
-  const functions = getSqlFunctions(driverType);
+export function renderWiki(): string {
+  const title = 'PostgreSQL Reference';
+  const functions = getSqlFunctions();
   
   // Group functions by category
   const groups: Record<string, SqlFunctionDef[]> = {};

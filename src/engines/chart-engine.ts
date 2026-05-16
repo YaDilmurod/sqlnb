@@ -7,7 +7,7 @@
  */
 
 /**
- * Build a PostgreSQL/DuckDB aggregation query that wraps the user's original query.
+ * Build a PostgreSQL aggregation query that wraps the user's original query.
  * This runs the aggregation server-side so we get accurate results even for
  * datasets with millions of rows.
  */
@@ -21,7 +21,6 @@ export function buildAggregationQuery(
   yCol: string,
   aggFn: string,
   colorCol?: string,
-  driverType: 'postgres' | 'duckdb' = 'postgres',
   extraYCols?: string[]
 ): string {
   // Strip trailing semicolons from original query
@@ -48,8 +47,7 @@ export function buildAggregationQuery(
   const yExpressions = allYCols.map((col, idx) => {
     const safeCol = col.replace(/"/g, '""');
     const alias = idx === 0 ? '_sqlnb_agg_value' : `_sqlnb_agg_value_${idx}`;
-    const yCastPg = `CASE WHEN "${safeCol}"::text ~ '^[-+]?[0-9]*\\.?([0-9]+)?([eE][-+]?[0-9]+)?$' AND "${safeCol}"::text != '' AND "${safeCol}"::text != '.' THEN "${safeCol}"::numeric ELSE NULL END`;
-    const yCast = driverType === 'duckdb' ? `TRY_CAST("${safeCol}" AS numeric)` : yCastPg;
+    const yCast = `CASE WHEN "${safeCol}"::text ~ '^[-+]?[0-9]*\\.?([0-9]+)?([eE][-+]?[0-9]+)?$' AND "${safeCol}"::text != '' AND "${safeCol}"::text != '.' THEN "${safeCol}"::numeric ELSE NULL END`;
 
     switch (aggFn) {
       case 'count': return `COUNT(*) AS "${alias}"`;

@@ -78,9 +78,9 @@ export async function activate(context: vscode.ExtensionContext) {
       
       const initialData = {
         cells: [
-          { type: 'connection', content: 'duckdb||', name: '' },
+          { type: 'connection', content: 'postgres||', name: '' },
           { type: 'schema', content: '' },
-          { type: 'markdown', content: '# Welcome to SQL Notebook\n\n### Getting Started\n1. Click **Connect** above to start an in-memory DuckDB session (perfect for CSV, Excel, and Parquet files).\n2. Switch to **PostgreSQL** mode if you need to connect to a remote database.\n3. The Schema block will automatically show your database objects.\n4. Write queries in SQL blocks below.\n5. Add Chart, Profiler, or Schema blocks from the toolbar.' },
+          { type: 'markdown', content: '# Welcome to SQL Notebook\n\n### Getting Started\n1. Click **Configure Connection** to set up your PostgreSQL connection.\n2. The Schema block will automatically show your database objects.\n3. Write queries in SQL blocks below.\n4. Add Chart, Profiler, or Schema blocks from the toolbar.' },
           { type: 'sql', content: 'SELECT 1;' }
         ]
       };

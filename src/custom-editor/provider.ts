@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import { IDatabaseDriver, QueryResult } from '../drivers/types';
 import { PostgresDriver } from '../drivers/postgres';
-import { DuckDbDriver } from '../drivers/duckdb';
 import { buildSchemaQuery, parseSchemaRows, buildAutoCompleteQuery, parseAutoCompleteRows, buildConstraintQuery, parseConstraintRows } from '../engines/schema-engine';
 import { buildAggregationQuery } from '../engines/chart-engine';
 import { buildSummaryQuery } from '../engines/summary-engine';
@@ -120,7 +119,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           break;
         }
         case 'connect': {
-          const result = await this.connectToDb(session, msg.connectionString, msg.driverType);
+          const result = await this.connectToDb(session, msg.connectionString);
           if (result.success && msg.connectionString) {
             const recent = this.context.globalState.get<string[]>('sqlnb-recent-connections', []);
             if (!recent.includes(msg.connectionString)) {
@@ -230,7 +229,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           }
           const col = msg.column;
           const cleanQuery = msg.query.trim().replace(/;+$/, '');
-          const q = buildSummaryQuery(cleanQuery, { [col]: msg.columnType }, session.driverType as 'postgres'|'duckdb');
+          const q = buildSummaryQuery(cleanQuery, { [col]: msg.columnType });
           const start = performance.now();
           try {
              const res = await session.driver!.executeRaw(q);
@@ -245,7 +244,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             webviewPanel.webview.postMessage({ type: 'schema-load-result', cellIndex: msg.cellIndex, error: 'Not connected' });
             break;
           }
-          const query = buildSchemaQuery(session.driverType as 'postgres'|'duckdb');
+          const query = buildSchemaQuery();
           const start = performance.now();
           try {
             const result = await session.driver.executeRaw(query);
@@ -265,9 +264,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           const viewName = msg.tableName;
           const viewType = msg.tableType; // 'view' or 'materialized_view'
           let ddlQuery: string;
-          if (session.driverType === 'duckdb') {
-            ddlQuery = `SELECT sql FROM duckdb_views() WHERE view_name = '${viewName.replace(/'/g, "''")}'`;
-          } else if (viewType === 'materialized_view') {
+          if (viewType === 'materialized_view') {
             ddlQuery = `SELECT definition FROM pg_matviews WHERE schemaname = '${schemaName.replace(/'/g, "''")}' AND matviewname = '${viewName.replace(/'/g, "''")}'`;
           } else {
             ddlQuery = `SELECT pg_get_viewdef('${schemaName.replace(/'/g, "''")}."${viewName.replace(/"/g, '""')}"'::regclass, true) AS definition`;
@@ -314,7 +311,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
             break;
           }
           const cleanQuery = stored.query.trim().replace(/;+$/, '');
-          const q = buildAggregationQuery(cleanQuery, msg.xCol, msg.yCol, msg.aggFn, msg.colorCol, session.driverType as 'postgres'|'duckdb', msg.extraYCols);
+          const q = buildAggregationQuery(cleanQuery, msg.xCol, msg.yCol, msg.aggFn, msg.colorCol, msg.extraYCols);
           const start = performance.now();
           try {
             const res = await session.driver.executeRaw(q);
@@ -351,7 +348,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
           }
           
           const cleanQuery = stored.query.trim().replace(/;+$/, '');
-          const q = buildSummaryQuery(cleanQuery, columnTypes, session.driverType as 'postgres'|'duckdb');
+          const q = buildSummaryQuery(cleanQuery, columnTypes);
           const start = performance.now();
           try {
             const res = await session.driver.executeRaw(q);
@@ -477,33 +474,17 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
 
   // ── Database operations (all session-scoped) ──
 
-  private async connectToDb(session: DocumentSession, connStr: string, driverType: string = 'auto'): Promise<{ success: boolean; error?: string; dbName?: string; driverType?: string }> {
+  private async connectToDb(session: DocumentSession, connStr: string): Promise<{ success: boolean; error?: string; dbName?: string; driverType?: string }> {
     try {
       await this.disconnectSession(session);
       
-      let actualDriver = driverType;
-      if (actualDriver === 'auto' || !actualDriver) {
-         if (connStr.startsWith('postgres://') || connStr.startsWith('postgresql://')) {
-            actualDriver = 'postgres';
-         } else {
-            actualDriver = 'duckdb';
-         }
-      }
-      
-      if (actualDriver === 'duckdb') {
-        session.driverType = 'duckdb';
-        session.driver = new DuckDbDriver();
-        if (session.driver) await session.driver.connect(connStr);
-        session.currentDbName = connStr || 'In-Memory DuckDB';
-      } else {
-        session.driverType = 'postgres';
-        session.driver = new PostgresDriver();
-        if (session.driver) await session.driver.connect(connStr);
-        try {
-          session.currentDbName = new URL(connStr).pathname.slice(1) || 'postgres';
-        } catch {
-          session.currentDbName = 'postgres';
-        }
+      session.driverType = 'postgres';
+      session.driver = new PostgresDriver();
+      await session.driver.connect(connStr);
+      try {
+        session.currentDbName = new URL(connStr).pathname.slice(1) || 'postgres';
+      } catch {
+        session.currentDbName = 'postgres';
       }
       
       return { success: true, dbName: session.currentDbName, driverType: session.driverType };
@@ -622,14 +603,12 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
       if (err.dataType) errorDetails.dataType = String(err.dataType);
       if (err.constraint) errorDetails.constraint = String(err.constraint);
       
-      // DuckDB: parse LINE and position from error message text
+      // Parse LINE and position from error message text
       if (!err.position && errorMessage) {
-        // DuckDB often includes: LINE N: <text>\n ^  or  Error: ... (line:N:col:M)
         const lineMatch = errorMessage.match(/LINE\s+(\d+):/i);
         let prefixLength = 0;
         if (lineMatch) {
           errorDetails.line = Number(lineMatch[1]);
-          // Include the space after the colon in the prefix length
           prefixLength = lineMatch[0].length + 1; 
         }
         
@@ -653,7 +632,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
   private async sendAutoCompleteMetadata(session: DocumentSession, panel: vscode.WebviewPanel): Promise<void> {
     if (!session.driver || !session.driver.isConnected()) return;
     try {
-      const query = buildAutoCompleteQuery(session.driverType as 'postgres' | 'duckdb');
+      const query = buildAutoCompleteQuery();
       const result = await session.driver.executeRaw(query);
       const tables = parseAutoCompleteRows(result.rows || []);
       panel.webview.postMessage({ type: 'schema-metadata', tables });
@@ -665,8 +644,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
   /** Silently fetch FK/PK constraint metadata and send to webview. */
   private async sendConstraintMetadata(session: DocumentSession, panel: vscode.WebviewPanel): Promise<void> {
     if (!session.driver || !session.driver.isConnected()) return;
-    const queries = buildConstraintQuery(session.driverType as 'postgres' | 'duckdb');
-    if (!queries) return; // DuckDB — no constraint support
+    const queries = buildConstraintQuery();
     try {
       const [fkResult, pkResult] = await Promise.all([
         session.driver.executeRaw(queries.fkQuery),
@@ -683,9 +661,7 @@ export class SqlNotebookEditorProvider implements vscode.CustomTextEditorProvide
   private async sendSessionTimezone(session: DocumentSession, panel: vscode.WebviewPanel): Promise<void> {
     if (!session.driver || !session.driver.isConnected()) return;
     try {
-      const tzQuery = session.driverType === 'duckdb'
-        ? "SELECT current_setting('TimeZone') AS timezone"
-        : 'SHOW timezone';
+      const tzQuery = 'SHOW timezone';
       const result = await session.driver.executeRaw(tzQuery);
       let timezone = '';
       if (result.rows && result.rows.length > 0) {

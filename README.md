@@ -1,6 +1,6 @@
 # SQL Notebook
 
-**Jupyter-style SQL notebooks inside VS Code.** Connect to PostgreSQL or DuckDB, write queries, and visualize results — all without leaving your editor.
+**Jupyter-style SQL notebooks inside VS Code.** Connect to PostgreSQL, write queries, and visualize results — all without leaving your editor.
 
 ## Getting Started
 
@@ -20,7 +20,7 @@ You can also run `Cmd+Shift+P` → `SQL Notebook: New Notebook`.
 **3. Connect to a Database**
 `Cmd+Shift+P` → `SQL Notebook: Connect to Database` → paste your connection string.
 
-> Supports **PostgreSQL** (`postgres://...`) and **DuckDB** (local `.duckdb` files).
+> Supports **PostgreSQL** (`postgres://...`).
 
 **4. Write & Run SQL**
 Write SQL in any code cell and hit **Run**. Results appear as a sortable, paginated table.
@@ -43,7 +43,7 @@ Click **+ Chart** in the toolbar → pick X/Y axes → click **Run Chart**.
 | **Data Profile** | One-click summary statistics (numeric, categorical, date columns) |
 | **Query Cancel** | Stop runaway queries instantly via interrupt |
 | **CSV / Excel Export** | Export any result to CSV or Excel |
-| **Connection Modal** | Configure Postgres or DuckDB with dedicated connection cards and test buttons |
+| **Connection Modal** | Configure PostgreSQL with a dedicated connection card and test button |
 
 ---
 
@@ -60,7 +60,7 @@ Click **+ Chart** in the toolbar → pick X/Y axes → click **Run Chart**.
 ## Requirements
 
 - **VS Code** ≥ 1.80
-- **PostgreSQL** or **DuckDB** database
+- **PostgreSQL** database
 
 ---
 
