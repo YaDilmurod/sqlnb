@@ -355,6 +355,10 @@ function openConnectionModal(idx: number) {
         ${DATABASE_SVG} Test Connection
       </button>
       <span id="conn-modal-test-result" class="conn-modal-test-result"></span>
+      <label class="conn-modal-save-check">
+        <input type="checkbox" id="conn-modal-save-to-settings" checked />
+        <span>Save to My Connections</span>
+      </label>
       <button class="conn-modal-cancel-btn" id="conn-modal-cancel">Cancel</button>
       <button class="conn-modal-save-btn" id="conn-modal-save">Save & Connect</button>
     `
@@ -432,6 +436,13 @@ function openConnectionModal(idx: number) {
     cells[idx].content = 'postgres||' + cs;
     cells[idx].name = finalName;
     save();
+
+    // Persist to VS Code settings if checkbox is checked
+    const saveToSettings = (document.getElementById('conn-modal-save-to-settings') as HTMLInputElement)?.checked;
+    if (saveToSettings && finalName && cs.trim()) {
+      vscode.postMessage({ type: 'save-connection', name: finalName, connectionString: cs });
+    }
+
     modal.close();
     renderCells();
     // Trigger connect
@@ -658,7 +669,7 @@ function renderCells() {
         if (recentDropdown) {
           content += recentDropdown;
         }
-        content += `<button class="conn-configure-btn" style="margin: 0;" data-action="openConnModal" data-idx="${idx}">${SETTINGS_SVG} Configure New</button>`;
+        content += `<button class="conn-configure-btn" style="margin: 0;" data-action="openConnModal" data-idx="${idx}">${SETTINGS_SVG} Add Connection</button>`;
         content += `</div>`;
         
         if (connString.trim()) {
